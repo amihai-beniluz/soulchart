@@ -2,6 +2,7 @@
 from LettersAnalysis import load_letter_position_data, load_letter_data, load_element_data, load_element_position_data
 from LettersNikud import load_letters_nikud_data
 from NikudAnalysis import load_nikud_position_data, load_nikud_data
+from LettersNikudPosition import load_letters_nikud_position_data
 
 
 class NameAnalysis:
@@ -12,6 +13,7 @@ class NameAnalysis:
     element_position_data = None
     nikud_position_data = None
     letters_nikud_data = None
+    letters_nikud_position_data = None
 
     def __init__(self, name, nikud_dict):
         self.name = name
@@ -30,6 +32,8 @@ class NameAnalysis:
             NameAnalysis.nikud_position_data = load_nikud_position_data()  # טוען את נתוני הניקוד והמיקום
         if NameAnalysis.letters_nikud_data is None:
             NameAnalysis.letters_nikud_data = load_letters_nikud_data()  # טוען את נתוני הניקוד והאות
+        if NameAnalysis.letters_nikud_position_data is None:
+            NameAnalysis.letters_nikud_position_data = load_letters_nikud_position_data()  # טוען את נתוני האות הניקוד והמיקום
 
     def analyze_name(self):
         result = []
@@ -40,6 +44,7 @@ class NameAnalysis:
         element_position_data = NameAnalysis.element_position_data
         nikud_position_data = NameAnalysis.nikud_position_data
         letters_nikud_data = NameAnalysis.letters_nikud_data
+        letter_nikud_position_data = NameAnalysis.letters_nikud_position_data
         position_text = {
             1: "האות הראשונה בשם מייצגת:\n\n1. את המוח ואת הראש הפיזי.\n2. את האינטליגנציה.\n3. את היכולת והרצון "
                "בלימודים.\n4. את יכולת התקשורת.\n5. את היכולת להסתדר בחברה מבחינת דיבור ותקשורת.\n6. את המודעות "
@@ -109,7 +114,12 @@ class NameAnalysis:
                     letters_nikud_data[letter][nikud] not in ''.join(result):
                 result.append("\033[91m" + letters_nikud_data[letter][nikud] + "\033[0m\n\n")
 
-            # TODO ניתוח האות ביחס למיקום ולניקוד
+            # ניתוח האות ביחס למיקום ולניקוד
+            if letter in letter_nikud_position_data and nikud in letter_nikud_position_data[letter] and \
+                    position_key in letter_nikud_position_data[letter][nikud] and \
+                    letter_nikud_position_data[letter][nikud][position_key] not in ''.join(result):
+                result.append("\033[94m" + f"{letter}' כאות {position_key} בניקוד {nikud}: "
+                                           f"{letter_position_data[letter][nikud][position_key]}\n\033[0m")
 
             result.append("--------\n")
 

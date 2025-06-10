@@ -1,5 +1,3 @@
-# NikudAnalysis.py
-
 letters_nikud_data = None  # משתנה גלובלי שישמור את המילון
 
 
