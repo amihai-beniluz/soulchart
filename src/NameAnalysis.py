@@ -115,11 +115,14 @@ class NameAnalysis:
                 result.append("\033[91m" + letters_nikud_data[letter][nikud] + "\033[0m\n\n")
 
             # ניתוח האות ביחס למיקום ולניקוד
-            if letter in letter_nikud_position_data and nikud in letter_nikud_position_data[letter] and \
-                    position_key in letter_nikud_position_data[letter][nikud] and \
-                    letter_nikud_position_data[letter][nikud][position_key] not in ''.join(result):
-                result.append("\033[94m" + f"{letter}' כאות {position_key} בניקוד {nikud}: "
-                                           f"{letter_position_data[letter][nikud][position_key]}\n\033[0m")
+            if letter in letter_nikud_position_data and \
+               nikud in letter_nikud_position_data[letter] and \
+               position_key in letter_nikud_position_data[letter][nikud] and \
+               letter_nikud_position_data[letter][nikud][position_key] not in ''.join(result):
+                result.append("\033[94m" +
+                              f"{letter}' כאות {position_key} בניקוד {nikud}: " +
+                              letter_nikud_position_data[letter][nikud][position_key] +
+                              "\033[0m\n")
 
             result.append("--------\n")
 
