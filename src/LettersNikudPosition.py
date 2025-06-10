@@ -25,20 +25,19 @@ def load_letters_nikud_position_data():
                             current_position = parts[4] if parts[4] != "באות" else parts[5]
                             if current_position == "רביעית":
                                 current_position += " ואילך"
+                            else:
+                                current_position = current_position.rstrip(':')
 
                             # אתחול מילונים פנימיים לפי הצורך
                             if current_letter not in letters_nikud_position_data:
                                 letters_nikud_position_data[current_letter] = {}
                             if current_nikud not in letters_nikud_position_data[current_letter]:
                                 letters_nikud_position_data[current_letter][current_nikud] = {}
-                            letters_nikud_position_data[current_letter][current_nikud][current_position] = ""
+                            if current_position not in letters_nikud_position_data[current_letter][current_nikud]:
+                                letters_nikud_position_data[current_letter][current_nikud][current_position] = ""
+                            letters_nikud_position_data[current_letter][current_nikud][current_position] += line + "\n"
                         except Exception as e:
                             print(f"שורת כותרת לא תקינה: {line} — {e}")
-
-                    else:
-                        # המשך פסקה — הוסף לתוכן של המיקום הנוכחי
-                        if current_letter and current_nikud and current_position:
-                            letters_nikud_position_data[current_letter][current_nikud][current_position] += line + "\n"
 
         except Exception as e:
             print(f"Error reading the file: {e}")

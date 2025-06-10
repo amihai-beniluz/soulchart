@@ -118,8 +118,7 @@ class NameAnalysis:
             if letter in letter_nikud_position_data and nikud in letter_nikud_position_data[letter] and \
                     position_key in letter_nikud_position_data[letter][nikud] and \
                     letter_nikud_position_data[letter][nikud][position_key] not in ''.join(result):
-                result.append("\033[94m" + f"{letter}' כאות {position_key} בניקוד {nikud}: "
-                                           f"{letter_position_data[letter][nikud][position_key]}\n\033[0m")
+                result.append("\033[94m" + f"{letter_nikud_position_data[letter][nikud][position_key]}\n\033[0m")
 
             result.append("--------\n")
 
