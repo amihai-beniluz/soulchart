@@ -1,3 +1,5 @@
+import re
+
 letters_nikud_position_data = None  # משתנה גלובלי שישמור את המילון
 
 def load_letters_nikud_position_data():
@@ -15,30 +17,39 @@ def load_letters_nikud_position_data():
                     if not line:
                         continue
 
-                    if line.startswith("האות"):
+                    # שורת כותרת של אות חדשה
+                    if line.startswith("אות "):
                         try:
-                            parts = line.split()
-                            current_letter = parts[1][0]  # האות עצמה
-                            current_nikud = parts[2][1:]       # הניקוד
-                            if current_nikud == "ללא":
-                                current_nikud = "ריק"
-                            current_position = parts[4] if parts[4] != "באות" else parts[5]
-                            if current_position == "רביעית":
-                                current_position += " ואילך"
-
-                            # אתחול מילונים פנימיים לפי הצורך
-                            if current_letter not in letters_nikud_position_data:
-                                letters_nikud_position_data[current_letter] = {}
-                            if current_nikud not in letters_nikud_position_data[current_letter]:
-                                letters_nikud_position_data[current_letter][current_nikud] = {}
-                            letters_nikud_position_data[current_letter][current_nikud][current_position] = ""
+                            current_letter = line.split()[1][0]
+                            current_nikud = None
+                            current_position = None
                         except Exception as e:
-                            print(f"שורת כותרת לא תקינה: {line} — {e}")
+                            print(f"שורת אות לא תקינה: {line} — {e}")
+                        continue
 
-                    else:
-                        # המשך פסקה — הוסף לתוכן של המיקום הנוכחי
-                        if current_letter and current_nikud and current_position:
-                            letters_nikud_position_data[current_letter][current_nikud][current_position] += line + "\n"
+                    # שורת כותרת המתארת אות, ניקוד ומיקום
+                    if line.startswith("האות"):
+                        match = re.match(r"^האות\s+([\u0590-\u05EA])'\s+(.*?)\s+באות\s+([^:]+):\s*(.*)", line)
+                        if match:
+                            letter, nikud, position, text = match.groups()
+                            nikud = nikud.lstrip('ב').strip()
+                            if nikud == "ללא ניקוד" or nikud == "ללא":
+                                nikud = "ריק"
+                            if position == "רביעית ומעלה":
+                                position = "רביעית ואילך"
+
+                            letters_nikud_position_data.setdefault(letter, {}).setdefault(nikud, {})[position] = text + "\n"
+
+                            current_letter = letter
+                            current_nikud = nikud
+                            current_position = position
+                        else:
+                            print(f"שורת כותרת לא תקינה: {line}")
+                        continue
+
+                    # המשך פסקה — הוסף לתוכן של המיקום הנוכחי
+                    if current_letter and current_nikud and current_position:
+                        letters_nikud_position_data[current_letter][current_nikud][current_position] += line + "\n"
 
         except Exception as e:
             print(f"Error reading the file: {e}")
