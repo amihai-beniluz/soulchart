@@ -32,8 +32,8 @@ if __name__ == "__main__":
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        webhook_path="/webhook",
-        webhook_url=WEBHOOK_URL,
+        webhook_url=WEBHOOK_URL
     )
+
 
 
