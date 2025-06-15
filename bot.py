@@ -23,17 +23,17 @@ app = ApplicationBuilder().token(BOT_TOKEN).build()
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
 if __name__ == "__main__":
+    from telegram.ext import ApplicationBuilder
+
     print("🚀 SoulChart bot starting up!")
-    import asyncio
 
-    async def main():
-        await app.bot.set_webhook(url=WEBHOOK_URL)
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-        await app.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            webhook_path="/webhook",
-        )
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_path="/webhook",
+        webhook_url=WEBHOOK_URL,
+    )
 
-    asyncio.run(main())
 
