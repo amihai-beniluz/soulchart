@@ -1,20 +1,13 @@
-# fly.toml app configuration file generated for amihai on 2025-06-15T17:00:20+03:00
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
+app = "amihai"
+primary_region = "fra"
 
-app = 'amihai'
-primary_region = 'fra'
+[env]
+PORT = "8080"
 
-[http_service]
+[[services]]
   internal_port = 8080
-  force_https = true
-  auto_stop_machines = 'stop'
-  auto_start_machines = true
-  min_machines_running = 0
-  processes = ['app']
+  protocol = "tcp"
 
-[[vm]]
-  memory = '1gb'
-  cpu_kind = 'shared'
-  cpus = 1
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
