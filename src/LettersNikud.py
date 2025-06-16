@@ -1,12 +1,18 @@
 letters_nikud_data = None  # משתנה גלובלי שישמור את המילון
 
+import os
+
+# בסמוך לראש הקובץ
+MODULE_DIR  = os.path.dirname(__file__)              # …/SoulChart/src
+PROJECT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir))  # …/SoulChart
+DATA_DIR    = os.path.join(PROJECT_DIR, 'data')
 
 def load_letters_nikud_data():
     global letters_nikud_data
     if letters_nikud_data is None:
         letters_nikud_data = {}
         try:
-            with open('data/letters_by_nikud.txt', 'r', encoding='utf-8-sig') as f:
+            with open(os.path.join(DATA_DIR, 'letters_by_nikud.txt'), 'r', encoding='utf-8-sig') as f:
                 current_letter = None
 
                 for line in f:

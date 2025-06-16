@@ -1,4 +1,10 @@
 import re
+import os
+
+# בסמוך לראש הקובץ
+MODULE_DIR  = os.path.dirname(__file__)              # …/SoulChart/src
+PROJECT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir))  # …/SoulChart
+DATA_DIR    = os.path.join(PROJECT_DIR, 'data')
 
 letter_position_data = None  # משתנה גלובלי, נטען פעם אחת בלבד
 element_position_data = None  # משתנה גלובלי, נטען פעם אחת בלבד
@@ -11,7 +17,7 @@ def load_letter_position_data():
     if letter_position_data is None:  # טוענים רק אם עוד לא נטען
         letter_position_data = {}
         try:
-            with open('data/letters_by_position.txt', 'r', encoding='utf-8-sig') as f:
+            with open(os.path.join(DATA_DIR, 'letters_by_position.txt'), 'r', encoding='utf-8-sig') as f:
                 current_letter = None
                 current_position = None
 
@@ -42,7 +48,7 @@ def load_element_position_data():
     if element_position_data is None:  # טוענים רק אם עוד לא נטען
         element_position_data = {}
         try:
-            with open('data/element_by_position.txt', 'r', encoding='utf-8-sig') as f:
+            with open(os.path.join(DATA_DIR, 'element_by_position.txt'), 'r', encoding='utf-8-sig') as f:
                 current_element = None
                 current_position = None
 
@@ -71,7 +77,7 @@ def load_letter_data():
     if letter_data is None:  # טוענים רק אם עוד לא נטען
         letter_data = {}
         try:
-            with open('data/letters.txt', 'r', encoding='utf-8-sig') as f:
+            with open(os.path.join(DATA_DIR, 'letters.txt'), 'r', encoding='utf-8-sig') as f:
                 current_letter = None
 
                 for line in f:
@@ -97,7 +103,7 @@ def load_element_data():
     if element_data is None:  # טוענים רק אם עוד לא נטען
         element_data = {}
         try:
-            with open('data/element.txt', 'r', encoding='utf-8-sig') as f:
+            with open(os.path.join(DATA_DIR, 'element.txt'), 'r', encoding='utf-8-sig') as f:
                 current_element = None
 
                 for line in f:
