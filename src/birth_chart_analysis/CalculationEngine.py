@@ -12,6 +12,9 @@ ZODIAC_SIGNS = ['טלה', 'שור', 'תאומים', 'סרטן', 'אריה', 'ב�
 ENG_ZODIAC_SIGNS = ['Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
                     'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces']
 
+# src/birth_chart_analysis/CalculationEngine.py
+# ... (שאר תוכן הקובץ, כולל הייבואים והגדרות הקבועים) ...
+
 # רשימת גופים פלנטריים שבהם נשתמש לחישוב טרנזיטים
 # (בניגוד לנטאל, לא נחשב כאן ראשי בתים נוספים כמו MC/AC כי הם סטטיים למיקום הלידה)
 # נכלול רק את 10 הגופים הראשיים + כירון, ראש דרקון.
@@ -56,45 +59,36 @@ def ensure_float(value) -> float:
     return float(value)
 
 
-# src/birth_chart_analysis/CalculationEngine.py
+def get_sign_and_house(degree: float, house_cusps: list) -> tuple[str, int]:
+    """ מחזיר את המזל ואת הבית שבהם נמצאת מעלה נתונה (0-360) """
 
-# ... (שאר תוכן הקובץ) ...
+    # וידוא שהמעלה היא float תקין
+    degree = ensure_float(degree)
+    degree = degree % 360  # נרמול לטווח 0-360
 
-def get_sign_and_house(lon_deg: float, house_cusps_list: list) -> tuple:
-    """
-    מחשב את המזל ואת הבית שבו נמצא כוכב או נקודה.
-    """
+    # חישוב מזל
+    sign_index = int(degree // 30)
+    sign = ZODIAC_SIGNS[sign_index]
 
-    # 1. חישוב המזל (תמיד מתבצע)
-    sign_index = math.floor(lon_deg / 30.0) % 12
-    sign_heb = ZODIAC_SIGNS[sign_index]
+    # חישוב בית (התבססות על house_cusps)
+    house = 12
+    for h in range(1, 13):
+        # וידוא שכל הערכים הם float תקינים
+        start_cusp = ensure_float(house_cusps[h])
+        end_cusp = ensure_float(house_cusps[h % 12 + 1])
 
-    # 2. חישוב הבית (ביתא הבית)
-    house = None  # ברירת מחדל: אין בית מחושב
-
-    # --- 💡 ההגנה על הקוד הישן מתחילה כאן ---
-    # נניח שרשימה תקינה של קווי יתד צריכה להכיל 13 איברים (Cusps[0] עד Cusps[12]).
-    if house_cusps_list and len(house_cusps_list) >= 13:
-        # הקוד הישן של ה-main ממשיך לרוץ כאן כרגיל, ומשתמש באינדקסים 1 עד 12.
-
-        # מכיוון שלא הראית את לוגיקת חישוב הבית המקורית, נניח שהיא תקינה:
-        # הקוד שחישב את הבית יופעל רק אם house_cusps_list תקין
-
-        # דוגמה ללוגיקה שייתכן והייתה קיימת (אם לא השתמשת ב-swe.house_pos):
-        for i in range(1, 13):
-            # i מייצג את מספר הבית
-            cusp_start = house_cusps_list[i]
-            # קו היתד הבא
-            cusp_end = house_cusps_list[i % 12 + 1]
-
-            if (cusp_start <= lon_deg < cusp_end) or \
-                    (cusp_start > cusp_end and (lon_deg >= cusp_start or lon_deg < cusp_end)):
-                house = i
+        # טיפול במעבר דרך 0 מעלות (טלה-דגים)
+        if start_cusp <= end_cusp:
+            if start_cusp <= degree < end_cusp:
+                house = h
                 break
-    # --- 💡 סוף ההגנה ---
+        else:
+            if start_cusp <= degree or degree < end_cusp:
+                house = h
+                break
 
-    # אם הקוד הגיע לכאן מ-transit_main (עם רשימת בתים ריקה), house יישאר None
-    return sign_heb, house
+    return sign, house
+
 
 def calculate_aspects(planets_data: dict) -> list[dict]:
     """
@@ -329,61 +323,74 @@ def calculate_chart_positions(birth_datetime: datetime, lat: float, lon: float) 
 
 
 def calculate_current_positions(dt_object: datetime, lat: float, lon: float) -> dict:
-    """ מחשב את מיקומי הכוכבים והנקודות לזמן נתון (מעבר). """
+    """
+    מחשב את מיקומי הכוכבים והנקודות לזמן נתון (מעבר).
+    """
     chart_data = {'Planets': {}}
 
     # המרת תאריך ושעה ליום יוליאני (JD) של זמן אוניברסלי (UT)
     jd_ut = swe.julday(dt_object.year, dt_object.month, dt_object.day,
-                       dt_object.hour + dt_object.minute / 60.0 + dt_object.second / 3600.0)
+                      dt_object.hour + dt_object.minute / 60.0 + dt_object.second / 3600.0)
 
-    # הגדרת דגלים לחישובים
+    # הגדרת דגלים לחישובים (אורך אקליפטי, גאוצנטרי, אסטרולוגי)
     flags = swe.FLG_SWIEPH | swe.FLG_TOPOCTR | swe.FLG_EQUATORIAL
 
-    # הגדרת מיקום התצפית (המיקום הנוכחי)
-    swe.set_topo(lon, lat, 0)
+    # 1. הגדרת מיקום התצפית (המיקום הנוכחי)
+    swe.set_topo(lon, lat, 0)  # longitude, latitude, altitude
 
-    # חישוב מיקומי הכוכבים
+    # 2. חישוב מיקומי הכוכבים
     for name_heb, planet_id in PLANET_IDS_FOR_TRANSIT.items():
+        # xx הוא מערך של 6 ערכים, xx[0] הוא אורך פלנטרי
         xx, retflags = swe.calc_ut(jd_ut, planet_id, flags)
 
         lon_deg = ensure_float(xx[0])
-        speed = ensure_float(xx[3])
+        speed = ensure_float(xx[3])  # מהירות אורכית (degree/day)
 
         is_retrograde = speed < 0.0
-        planet_sign, _ = get_sign_and_house(lon_deg, [])
 
+        # חישוב מזל (הבתים לא רלוונטיים במפת מעבר)
+        planet_sign, _ = get_sign_and_house(lon_deg, [0.0] * 13)  # מעבירים רשימה ריקה של בתים
+
+        # ⚠️ נקודות (כמו ראש דרקון) אינן נחשבות כנסיגה קלאסית
+        if planet_id in [swe.MEAN_NODE, swe.TRUE_NODE, swe.MEAN_APOG, swe.OSCU_APOG]:
+            is_retrograde = False
+
+        # שמירת הנתונים
         chart_data['Planets'][name_heb] = {
             'lon_deg': lon_deg,
             'sign': planet_sign,
-            'house': None,
-            'is_retrograde': is_retrograde,
-            'degree': math.floor(lon_deg) % 30,
-            'minute': int((lon_deg * 60) % 60),
-            'speed': speed
+            'house': None,  # נשאר None
+            'is_retrograde': is_retrograde
         }
 
     return chart_data
 
 
 def calculate_transit_aspects(natal_planets: dict, transit_planets: dict, orb: float) -> list:
-    """ מחשב את ההיבטים (Bi-wheel) בין כוכבי מפת הלידה לכוכבי המעבר. """
+    """
+    מחשב את ההיבטים (Bi-wheel) בין כוכבי מפת הלידה לכוכבי המעבר.
+
+    :param natal_planets: מיקומי כוכבי הלידה (מילון: שם: {lon_deg: X, ...}).
+    :param transit_planets: מיקומי כוכבי המעבר (מילון: שם: {lon_deg: X, ...}).
+    :param orb: האורב המקסימלי במעלות.
+    :return: רשימה של מילונים המייצגים את ההיבטים.
+    """
     aspects_list = []
 
-    # ... (העתק את הלוגיקה לחישוב היבטים משיחה קודמת לכאן) ...
-    # הלוגיקה המלאה של calculate_transit_aspects נמצאת בתשובה קודמת
-
+    # 1. עוברים על כל כוכב נטאל
     for p1_name_heb, p1_data in natal_planets.items():
         if 'lon_deg' not in p1_data or p1_data['lon_deg'] is None:
             continue
+
         p1_lon = ensure_float(p1_data['lon_deg'])
 
+        # 2. עוברים על כל כוכב טרנזיט
         for p2_name_heb, p2_data in transit_planets.items():
             if 'lon_deg' not in p2_data or p2_data['lon_deg'] is None:
                 continue
 
-            # ודא שהכוכבים שונים, למעט מקרים מיוחדים (כמו ורטקס שאינו טרנזיט)
-            if p1_name_heb == p2_name_heb and p1_name_heb in ['ראש דרקון', 'פורטונה', 'ורטקס']:
-                continue
+            # היבטי טרנזיט נבדקים בין כל כוכב נטאל לכל כוכב טרנזיט (Bi-wheel)
+            # לצורך הדיוק, אנו משווים גם כוכב נטאל לכוכב טרנזיט בעל אותו שם (לדוגמה: מאדים נטאל מול מאדים טרנזיט).
 
             p2_lon = ensure_float(p2_data['lon_deg'])
 
@@ -395,12 +402,14 @@ def calculate_transit_aspects(natal_planets: dict, transit_planets: dict, orb: f
             for angle, aspect_name_eng in ASPECTS_DICT.items():
                 difference = math.fabs(separation - angle)
 
+                # אם ההפרש קטן מהאורב המקסימלי
                 if difference <= orb:
                     aspects_list.append({
-                        'planet1_heb': p1_name_heb,
-                        'planet2_heb': p2_name_heb,
-                        'p1_type': 'natal',
-                        'p2_type': 'transit',
+                        'planet1': p1_name_heb,
+                        'planet2': p2_name_heb,
+                        'p1_type': 'natal',  # הוספה לדיווח
+                        'p2_type': 'transit',  # הוספה לדיווח
+                        'aspect_name_heb': aspect_name_eng,  # שימוש ב-ENG כבסיס
                         'aspect_name_eng': aspect_name_eng,
                         'orb': difference
                     })

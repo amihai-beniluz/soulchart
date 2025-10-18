@@ -2,8 +2,8 @@
 
 from datetime import datetime
 import textwrap
-import math
 import traceback
+import math
 
 # ייבוא מהמודולים השכנים
 from .CalculationEngine import calculate_chart_positions, ZODIAC_SIGNS, ENG_ZODIAC_SIGNS, calculate_current_positions, calculate_transit_aspects
@@ -99,141 +99,6 @@ class ChartAnalysis:
         degree = float(degree) % 360
         return ENG_ZODIAC_SIGNS[int(degree // 30)]
 
-    def _format_positions_report(self, planets_data: dict, title: str, include_house: bool = True) -> list:
-        """מעצבת דוח מיקומי כוכבים (נטאלי או טרנזיט)."""
-        report = [
-            f"\n{'=' * 80}",
-            f"{title}",
-            f"{'=' * 80}",
-            "\n* מיקומי כוכבים ונקודות:\n"
-        ]
-
-        # הרשימה כוללת גופים רלוונטיים בלבד
-        reportable_planets = [
-            'שמש', 'ירח', 'מרקורי', 'ונוס', 'מאדים', 'צדק',
-            'שבתאי', 'אורנוס', 'נפטון', 'פלוטו', 'ראש דרקון', 'כירון',
-            'אופק (AC)', 'רום שמיים (MC)', 'פורטונה', 'ורטקס'
-        ]
-
-        for name in reportable_planets:
-            # בדיקה אם הנקודה קיימת במילון הנתונים
-            if name in planets_data and 'lon_deg' in planets_data[name] and planets_data[name]['lon_deg'] is not None:
-                pos = planets_data[name]
-
-                lon_deg = pos['lon_deg']
-
-                # --- ✅ התיקון: בדיקת קיום מפתחות לפני שימוש ---
-                if 'degree' in pos and 'minute' in pos:
-                    # אם המפתחות קיימים (כוכבי לכת ראשיים בנטאל)
-                    degree = pos['degree']
-                    minute = pos['minute']
-                else:
-                    # אם המפתחות חסרים (נקודות רגישות או נתוני הטרנזיט החדשים)
-                    # נחשב אותם מחדש מתוך lon_deg
-                    degree = math.floor(lon_deg) % 30
-                    minute = int((lon_deg * 60) % 60)
-                # ------------------------------------------------
-
-                sign_heb = pos['sign']
-                retro_str = " (R)" if pos.get('is_retrograde') else ""
-
-                # שורה זו כבר לא תיכשל מכיוון ש'degree' ו-'minute' מחושבים או קיימים
-                formatted_position = f"{degree:02d}°{minute:02d}' ב{sign_heb}{retro_str}"
-
-                line = f"    - {name:<10}: {formatted_position}"
-
-                if include_house and pos.get('house') is not None:
-                    line += f" (בית {pos['house']})"
-
-                report.append(line)
-
-        report.append("\n")
-        return report
-
-    def _format_aspects_report(self, aspects_list: list, title: str) -> list:
-        # ... (העתק את תוכן הפונקציה מתשובה קודמת) ...
-        report = [
-            f"\n{'=' * 80}",
-            f"{title}",
-            f"{'=' * 80}",
-            ""
-        ]
-
-        if not aspects_list:
-            report.append("אין היבטים משמעותיים בין כוכבי המעבר ללידה שנמצאו.")
-            return report
-
-        for aspect in aspects_list:
-            p1_heb = aspect['planet1_heb']
-            p2_heb = aspect['planet2_heb']
-            aspect_heb = self.ASPECTS_DICT_HEB.get(aspect['aspect_name_eng'], aspect['aspect_name_eng'])
-            orb = aspect['orb']
-
-            p1_type = "נטאלי" if aspect.get('p1_type') == 'natal' else "מעבר"
-            p2_type = "מעבר" if aspect.get('p2_type') == 'transit' else "נטאלי"
-
-            report.append(f"✅ {p1_heb} ({p1_type}) {aspect_heb} {p2_heb} ({p2_type}) | אורב: {orb:.2f}°")
-
-        report.append("")
-        return report
-
-    def analyze_transits_and_aspects(self, current_location: tuple) -> list:
-        """ מבצע השוואה בין מפת הלידה למיקומי הכוכבים הנוכחיים (מעבר). """
-        current_lat, current_lon = current_location
-        # ... (המשך הלוגיקה שהוצעה קודם) ...
-
-        if not self.user.location or not self.user.birthtime:
-            return [f"❌ אין מספיק נתונים לחישוב מדויק (חסרים שעה ו/או מיקום לידה)."]
-
-        birth_datetime = datetime.combine(self.user.birthdate, self.user.birthtime)
-        try:
-            natal_chart_positions = calculate_chart_positions(
-                birth_datetime,
-                self.user.location[0],
-                self.user.location[1]
-            )
-        except Exception as e:
-            return [f"❌ שגיאה בחישוב המפה הנטאלית: {e}"]
-
-        now = datetime.now()
-        try:
-            transit_chart_positions = calculate_current_positions(
-                now,
-                current_lat,
-                current_lon
-            )
-        except Exception as e:
-            return [f"❌ שגיאה בחישוב מיקומי המעבר הנוכחיים: {e}"]
-
-        try:
-            transit_aspects_list = calculate_transit_aspects(
-                natal_chart_positions['Planets'],
-                transit_chart_positions['Planets'],
-                6.0
-            )
-        except Exception as e:
-            transit_aspects_list = []
-            print(f"⚠️ אזהרה: שגיאה בחישוב היבטי מעבר: {e}. ממשיכים ללא היבטים.")
-
-        report = [
-            f"=== ניתוח מעברים (טרנזיטים) עבור {self.user.name} ({self.user.birthdate}) - נכון לתאריך: {now.strftime('%Y-%m-%d %H:%M')} ===\n"]
-
-        report.extend(self._format_positions_report(
-            natal_chart_positions['Planets'],
-            "1. מיקומי כוכבי הלידה (נטאלי)"
-        ))
-
-        report.extend(self._format_positions_report(
-            transit_chart_positions['Planets'],
-            "2. מיקומי כוכבים נוכחיים (מעבר / טרנזיט)"
-        ))
-
-        report.extend(self._format_aspects_report(
-            transit_aspects_list,
-            "3. היבטים נוצרים בין כוכבי מעבר ללידה (טרנזיטים)"
-        ))
-
-        return report
 
     def is_sign_intercepted(self, house_cusps: list, sign: str) -> bool:
         """
@@ -252,6 +117,173 @@ class ChartAnalysis:
             return sign not in cusp_signs
         except Exception:
             return False
+
+    def _format_positions_report(self, planets_data: dict, title: str) -> list:
+        """מחלץ ומעצב את מיקומי הכוכבים כטקסט (נטאלי או מעבר)."""
+        report = [
+            f"\n{'=' * 80}",
+            f"{title}",
+            f"{'=' * 80}"
+        ]
+
+        # הרשימה מכילה רק גופים מרכזיים
+        major_planets = [p for p in self.PLANET_NAMES_ENG.keys()
+                         if p in planets_data and p not in ['פורטונה', 'ורטקס', 'לילית', 'כירון', 'ראש דרקון']]
+
+        # הוספת נקודות רגישות מרכזיות
+        points = ['אופק (AC)', 'רום שמיים (MC)']
+
+        # כוכבים ונקודות
+        report.append("\n* מיקומי כוכבים ונקודות:")
+        for name in major_planets + points:
+            if name in planets_data:
+                pos = planets_data[name]
+                # עיצוב הפורמט: 'מאדים: 23°55' בטלה'
+                formatted_position = f"{pos['degree']:02d}°{pos['minute']:02d}' ב{pos['sign']}"
+                report.append(f"    - {name:<10}: {formatted_position}")
+
+        report.append("")
+        return report
+
+    def _format_positions_report(self, planets_data: dict, title: str, include_house: bool = True) -> list:
+        """מעצבת דוח מיקומי כוכבים (נטאלי או טרנזיט)."""
+        report = [
+            f"\n{'=' * 80}",
+            f"{title}",
+            f"{'=' * 80}",
+            "\n* מיקומי כוכבים ונקודות:\n"
+        ]
+
+        # הרשימה כוללת גופים רלוונטיים בלבד
+        reportable_planets = [
+            'שמש', 'ירח', 'מרקורי', 'ונוס', 'מאדים', 'צדק',
+            'שבתאי', 'אורנוס', 'נפטון', 'פלוטו', 'ראש דרקון', 'כירון',
+            'אופק (AC)', 'רום שמיים (MC)', 'פורטונה', 'ורטקס'
+        ]
+
+        for name in reportable_planets:
+            if name in planets_data and 'lon_deg' in planets_data[name] and planets_data[name]['lon_deg'] is not None:
+                pos = planets_data[name]
+
+                # חישוב מעלה ודקה
+                lon_deg = pos['lon_deg']
+                degree = math.floor(lon_deg) % 30
+                minute = int((lon_deg * 60) % 60)
+
+                sign_heb = pos['sign']
+                retro_str = " (R)" if pos.get('is_retrograde') else ""
+
+                formatted_position = f"{degree:02d}°{minute:02d}' ב{sign_heb}{retro_str}"
+
+                line = f"    - {name:<10}: {formatted_position}"
+
+                if include_house and pos.get('house') is not None:
+                    line += f" (בית {pos['house']})"
+
+                report.append(line)
+
+        report.append("\n")
+        return report
+
+    def _format_aspects_report(self, aspects_list: list, title: str) -> list:
+        """מעצבת דוח היבטים (נטאל-נטאל או נטאל-טרנזיט)."""
+        report = [
+            f"\n{'=' * 80}",
+            f"{title}",
+            f"{'=' * 80}",
+            "\n"
+        ]
+
+        if not aspects_list:
+            report.append("אין היבטים משמעותיים שנמצאו.")
+            return report
+
+        for aspect in aspects_list:
+            p1_heb = aspect['planet1']
+            p2_heb = aspect['planet2']
+
+            # תרגום שם ההיבט לעברית
+            aspect_heb = self.ASPECTS_DICT_HEB.get(aspect['aspect_name_eng'], aspect['aspect_name_eng'])
+            orb = aspect['orb']
+
+            # הוספת סוג המפה (נטאלי/מעבר)
+            p1_type_str = f" ({'נטאל' if aspect.get('p1_type') == 'natal' else 'מעבר'})"
+            p2_type_str = f" ({'מעבר' if aspect.get('p2_type') == 'transit' else 'נטאל'})"
+
+            report.append(f"✅ {p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str} | אורב: {orb:.2f}°")
+
+        report.append("\n")
+        return report
+
+    def analyze_transits_and_aspects(self, current_location: tuple) -> list:
+        """
+        מבצע השוואה בין מפת הלידה (נטאלית) למיקומי הכוכבים הנוכחיים (מעבר/טרנזיט).
+        """
+        current_lat, current_lon = current_location
+        ORB_MAX = 6.0  # אורב מקסימלי לטרנזיטים
+
+        if not self.user.location or not self.user.birthtime:
+            return [f"❌ אין מספיק נתונים לחישוב מדויק (חסרים שעה ו/או מיקום לידה)."]
+
+        birth_datetime = datetime.combine(self.user.birthdate, self.user.birthtime)
+        now = datetime.now()
+
+        # 1. חישוב נתוני מפת הלידה (נטאלי)
+        try:
+            natal_chart_positions = calculate_chart_positions(
+                birth_datetime,
+                self.user.location[0],
+                self.user.location[1]
+            )
+        except Exception as e:
+            return [f"❌ שגיאה בחישוב המפה הנטאלית: {e}"]
+
+        # 2. חישוב מיקומי כוכבים נוכחיים (מעבר/טרנזיט)
+        try:
+            transit_chart_positions = calculate_current_positions(
+                now,
+                current_lat,
+                current_lon
+            )
+        except Exception as e:
+            return [f"❌ שגיאה בחישוב מיקומי המעבר הנוכחיים: {e}"]
+
+        # 3. חישוב היבטים בין נטאל למעבר (Bi-wheel Aspects)
+        try:
+            transit_aspects_list = calculate_transit_aspects(
+                natal_chart_positions['Planets'],
+                transit_chart_positions['Planets'],
+                ORB_MAX
+            )
+        except Exception as e:
+            print(f"⚠️ אזהרה: שגיאה בחישוב היבטי מעבר: {e}. ממשיכים ללא היבטים.")
+            transit_aspects_list = []
+
+        report = [
+            f"=== ניתוח מעברים (טרנזיטים) עבור {self.user.name} ({self.user.birthdate}) - נכון לתאריך: {now.strftime('%Y-%m-%d %H:%M')} ({current_lat:.2f}, {current_lon:.2f}) ==="]
+
+        # 4. עיצוב הדוחות
+        # דוח נטאל (כולל בתים)
+        report.extend(self._format_positions_report(
+            natal_chart_positions['Planets'],
+            "1. מיקומי כוכבי הלידה (נטאלי)",
+            include_house=True
+        ))
+
+        # דוח טרנזיט (ללא בתים)
+        report.extend(self._format_positions_report(
+            transit_chart_positions['Planets'],
+            "2. מיקומי כוכבים נוכחיים (מעבר / טרנזיט)",
+            include_house=False
+        ))
+
+        # דוח היבטים
+        report.extend(self._format_aspects_report(
+            transit_aspects_list,
+            "3. היבטים נוצרים בין כוכבי מעבר ללידה (טרנזיטים)"
+        ))
+
+        return report
 
     def _fetch_analysis(self, category: str, key: str, default_message: str = "❌ ניתוח זה לא נמצא במאגר") -> str:
         """ פונקציית עזר לשליפת ניתוח מהמאגר הטקסטואלי """
