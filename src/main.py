@@ -5,10 +5,10 @@ from user import User  # הנחה: user.py נמצא ב-src/
 from name_analysis.NameAnalysis import NameAnalysis  # ייבוא מהחבילה המאורגנת
 from birth_chart_analysis.ChartAnalysis import ChartAnalysis  # ייבוא מהחבילה החדשה
 
-MODULE_DIR  = os.path.dirname(__file__)
+MODULE_DIR = os.path.dirname(__file__)
 PROJECT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir))
-NAMES_DIR    = os.path.join(PROJECT_DIR, 'names')
-CHARTS_DIR    = os.path.join(PROJECT_DIR, 'charts')
+NAMES_DIR = os.path.join(PROJECT_DIR, 'names')
+CHARTS_DIR = os.path.join(PROJECT_DIR, 'charts')
 
 def get_user_input():
     """אוסף את כל נתוני המשתמש: שם, תאריך, שעה ומיקום."""
@@ -56,7 +56,7 @@ def get_user_input():
     return User(name, birthdate, birthtime, location), nikud_dict
 
 
-def write_results_to_file(output_dir: str, name: str, results: list, file_suffix: str = ".txt", wrap_text: bool = True):
+def write_results_to_file(output_dir: str, name: str, results: list, file_suffix: str = ".txt", wrap_text: bool = False):
     """פונקציה לשמירת פלט לקובץ, כולל יצירת התיקייה."""
 
     # יצירת התיקייה אם אינה קיימת

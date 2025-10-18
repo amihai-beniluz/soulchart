@@ -1,8 +1,8 @@
 # ייבוא הפונקציות לטעינת המידע
-from src.name_analysis.LettersAnalysis import load_letter_position_data, load_letter_data, load_element_data, load_element_position_data
-from src.name_analysis.LettersNikud import load_letters_nikud_data
-from src.name_analysis.NikudAnalysis import load_nikud_position_data, load_nikud_data
-from src.name_analysis.LettersNikudPosition import load_letters_nikud_position_data
+from .LettersAnalysis import load_letter_position_data, load_letter_data, load_element_data, load_element_position_data
+from .LettersNikud import load_letters_nikud_data
+from .NikudAnalysis import load_nikud_position_data, load_nikud_data
+from .LettersNikudPosition import load_letters_nikud_position_data
 
 
 class NameAnalysis:

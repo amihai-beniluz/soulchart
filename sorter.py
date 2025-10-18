@@ -3,11 +3,11 @@ import re
 import unicodedata
 
 # --- הגדרות קבצים ---
-FULL_INPUT_FILE = "sun_moon_ascendant.txt"
-OUTPUT_FILE = "sun_moon_ascendant_output.txt"
+FULL_INPUT_FILE = "planet_house_sign_whole.txt"
+OUTPUT_FILE = "planet_house_sign.txt"
 
-FINAL_SORTED_FILE = "house_to_house_FINAL_SORTED.txt"
-ERROR_FILE = "house_to_house_analysis_errors.txt"
+FINAL_SORTED_FILE = "planet_house_sign_FINAL_SORTED.txt"
+ERROR_FILE = "planet_house_sign_analysis_errors.txt"
 
 
 # --- פונקציית נורמליזציה (כדי לוודא שיוויון מלא) ---
@@ -36,6 +36,24 @@ def build_analysis_map_robust(output_filename, original_aspects_set):
         i = 0
         while i < len(lines):
             current_line = lines[i]
+            # 💡 טיפ: מומלץ תמיד לנקות שורה מתווי רווח מיותרים לפני הפיצול
+            current_line_split = current_line.strip().split()
+
+            if current_line_split and current_line_split[-1] == 'retrograde':
+                # 1. שמירת המילה הראשונה (לדוגמה: 'מרקורי')
+                first_word = current_line_split[0]
+
+                # 2. שמירת המילים האמצעיות (מהשנייה עד לפני האחרונה)
+                middle_words = current_line_split[1:-1]
+
+                # 3. בנייה מחדש של השורה באמצעות join, הוספת 'retrograde'
+                #    במקום השני, וצירוף המילים האמצעיות
+
+                # בניית הרשימה החדשה: [first_word, 'retrograde', *middle_words]
+                new_list = [first_word, 'retrograde'] + middle_words
+
+                # חיבור הרשימה למחרוזת שורה אחת
+                current_line = " ".join(new_list)
 
             # 1. בדיקה: האם השורה הנוכחית היא כותרת?
             normalized_current_line = ultimate_normalize_text(current_line)

@@ -2,10 +2,11 @@
 
 from datetime import datetime
 import textwrap
+import math
 import traceback
 
 # ייבוא מהמודולים השכנים
-from .CalculationEngine import calculate_chart_positions, ZODIAC_SIGNS, ENG_ZODIAC_SIGNS
+from .CalculationEngine import calculate_chart_positions, ZODIAC_SIGNS, ENG_ZODIAC_SIGNS, calculate_current_positions, calculate_transit_aspects
 from .DataLoaders import load_all_chart_data
 
 
@@ -34,7 +35,8 @@ class ChartAnalysis:
         'ונוס': 'Venus', 'מאדים': 'Mars', 'צדק': 'Jupiter',
         'שבתאי': 'Saturn', 'אורנוס': 'Uranus', 'נפטון': 'Neptune',
         'פלוטו': 'Pluto', 'ראש דרקון': 'North Node', 'לילית': 'Lilith',
-        'כירון': 'Chiron', 'אופק (AC)': 'AC', 'רום שמיים (MC)': 'MC'
+        'כירון': 'Chiron', 'אופק (AC)': 'AC', 'רום שמיים (MC)': 'MC', 'פורטונה': 'Fortune',
+        'ורטקס': 'Vertex'
     }
 
     SIGN_NAMES_ENG = {
@@ -60,6 +62,20 @@ class ChartAnalysis:
         'Ninth house', 'Tenth house', 'Eleventh house', 'Twelfth house'
     ]
 
+    ASPECTS_DICT_HEB = {
+        'Conjunction': 'צמוד',
+        'Opposition': 'מול',
+        'Trine': 'משולש',
+        'Square': 'ריבוע',
+        'Sextile': 'משושה',
+        'Inconjunct': 'קווינקונקס',
+        'SemiSextile': 'חצי-משושה',
+        'SemiSquare': 'חצי-ריבוע',
+        'Sesquiquadrate': 'סקווירפיינד',
+        'Quintile': 'קווינטייל',
+        'Biquintile': 'ביקווינטייל'
+    }
+
     def __init__(self, user: object):
         self.user = user
 
@@ -83,6 +99,141 @@ class ChartAnalysis:
         degree = float(degree) % 360
         return ENG_ZODIAC_SIGNS[int(degree // 30)]
 
+    def _format_positions_report(self, planets_data: dict, title: str, include_house: bool = True) -> list:
+        """מעצבת דוח מיקומי כוכבים (נטאלי או טרנזיט)."""
+        report = [
+            f"\n{'=' * 80}",
+            f"{title}",
+            f"{'=' * 80}",
+            "\n* מיקומי כוכבים ונקודות:\n"
+        ]
+
+        # הרשימה כוללת גופים רלוונטיים בלבד
+        reportable_planets = [
+            'שמש', 'ירח', 'מרקורי', 'ונוס', 'מאדים', 'צדק',
+            'שבתאי', 'אורנוס', 'נפטון', 'פלוטו', 'ראש דרקון', 'כירון',
+            'אופק (AC)', 'רום שמיים (MC)', 'פורטונה', 'ורטקס'
+        ]
+
+        for name in reportable_planets:
+            # בדיקה אם הנקודה קיימת במילון הנתונים
+            if name in planets_data and 'lon_deg' in planets_data[name] and planets_data[name]['lon_deg'] is not None:
+                pos = planets_data[name]
+
+                lon_deg = pos['lon_deg']
+
+                # --- ✅ התיקון: בדיקת קיום מפתחות לפני שימוש ---
+                if 'degree' in pos and 'minute' in pos:
+                    # אם המפתחות קיימים (כוכבי לכת ראשיים בנטאל)
+                    degree = pos['degree']
+                    minute = pos['minute']
+                else:
+                    # אם המפתחות חסרים (נקודות רגישות או נתוני הטרנזיט החדשים)
+                    # נחשב אותם מחדש מתוך lon_deg
+                    degree = math.floor(lon_deg) % 30
+                    minute = int((lon_deg * 60) % 60)
+                # ------------------------------------------------
+
+                sign_heb = pos['sign']
+                retro_str = " (R)" if pos.get('is_retrograde') else ""
+
+                # שורה זו כבר לא תיכשל מכיוון ש'degree' ו-'minute' מחושבים או קיימים
+                formatted_position = f"{degree:02d}°{minute:02d}' ב{sign_heb}{retro_str}"
+
+                line = f"    - {name:<10}: {formatted_position}"
+
+                if include_house and pos.get('house') is not None:
+                    line += f" (בית {pos['house']})"
+
+                report.append(line)
+
+        report.append("\n")
+        return report
+
+    def _format_aspects_report(self, aspects_list: list, title: str) -> list:
+        # ... (העתק את תוכן הפונקציה מתשובה קודמת) ...
+        report = [
+            f"\n{'=' * 80}",
+            f"{title}",
+            f"{'=' * 80}",
+            ""
+        ]
+
+        if not aspects_list:
+            report.append("אין היבטים משמעותיים בין כוכבי המעבר ללידה שנמצאו.")
+            return report
+
+        for aspect in aspects_list:
+            p1_heb = aspect['planet1_heb']
+            p2_heb = aspect['planet2_heb']
+            aspect_heb = self.ASPECTS_DICT_HEB.get(aspect['aspect_name_eng'], aspect['aspect_name_eng'])
+            orb = aspect['orb']
+
+            p1_type = "נטאלי" if aspect.get('p1_type') == 'natal' else "מעבר"
+            p2_type = "מעבר" if aspect.get('p2_type') == 'transit' else "נטאלי"
+
+            report.append(f"✅ {p1_heb} ({p1_type}) {aspect_heb} {p2_heb} ({p2_type}) | אורב: {orb:.2f}°")
+
+        report.append("")
+        return report
+
+    def analyze_transits_and_aspects(self, current_location: tuple) -> list:
+        """ מבצע השוואה בין מפת הלידה למיקומי הכוכבים הנוכחיים (מעבר). """
+        current_lat, current_lon = current_location
+        # ... (המשך הלוגיקה שהוצעה קודם) ...
+
+        if not self.user.location or not self.user.birthtime:
+            return [f"❌ אין מספיק נתונים לחישוב מדויק (חסרים שעה ו/או מיקום לידה)."]
+
+        birth_datetime = datetime.combine(self.user.birthdate, self.user.birthtime)
+        try:
+            natal_chart_positions = calculate_chart_positions(
+                birth_datetime,
+                self.user.location[0],
+                self.user.location[1]
+            )
+        except Exception as e:
+            return [f"❌ שגיאה בחישוב המפה הנטאלית: {e}"]
+
+        now = datetime.now()
+        try:
+            transit_chart_positions = calculate_current_positions(
+                now,
+                current_lat,
+                current_lon
+            )
+        except Exception as e:
+            return [f"❌ שגיאה בחישוב מיקומי המעבר הנוכחיים: {e}"]
+
+        try:
+            transit_aspects_list = calculate_transit_aspects(
+                natal_chart_positions['Planets'],
+                transit_chart_positions['Planets'],
+                6.0
+            )
+        except Exception as e:
+            transit_aspects_list = []
+            print(f"⚠️ אזהרה: שגיאה בחישוב היבטי מעבר: {e}. ממשיכים ללא היבטים.")
+
+        report = [
+            f"=== ניתוח מעברים (טרנזיטים) עבור {self.user.name} ({self.user.birthdate}) - נכון לתאריך: {now.strftime('%Y-%m-%d %H:%M')} ===\n"]
+
+        report.extend(self._format_positions_report(
+            natal_chart_positions['Planets'],
+            "1. מיקומי כוכבי הלידה (נטאלי)"
+        ))
+
+        report.extend(self._format_positions_report(
+            transit_chart_positions['Planets'],
+            "2. מיקומי כוכבים נוכחיים (מעבר / טרנזיט)"
+        ))
+
+        report.extend(self._format_aspects_report(
+            transit_aspects_list,
+            "3. היבטים נוצרים בין כוכבי מעבר ללידה (טרנזיטים)"
+        ))
+
+        return report
 
     def is_sign_intercepted(self, house_cusps: list, sign: str) -> bool:
         """
@@ -105,8 +256,22 @@ class ChartAnalysis:
     def _fetch_analysis(self, category: str, key: str, default_message: str = "❌ ניתוח זה לא נמצא במאגר") -> str:
         """ פונקציית עזר לשליפת ניתוח מהמאגר הטקסטואלי """
         data_source = self.chart_data.get(category, {})
-        # לא מוסיפים נקודותיים - המפתחות נטענים כמו שהם
         analysis = data_source.get(key, default_message)
+        return analysis
+
+    def _normalize_key(self, key: str) -> str:
+        """ מנרמל מפתח חיפוש אנגלי: מסיר רווחים מיותרים ומקפים. """
+        # נירמול רווחים פנימיים והסרת רווחים חיצוניים
+        normalized = " ".join(key.split()).strip()
+        # הסרת מקפים (כפי שנעשה ב-DataLoaders)
+        return normalized.replace('-', '')
+
+    def _fetch_analysis(self, category: str, key: str, default_message: str = "❌ ניתוח זה לא נמצא במאגר") -> str:
+        """ פונקציית עזר לשליפת ניתוח מהמאגר הטקסטואלי """
+        # 🚀 FIX: נירמול המפתח לפני השליפה
+        normalized_key = self._normalize_key(key)
+        data_source = self.chart_data.get(category, {})
+        analysis = data_source.get(normalized_key, default_message)
         return analysis
 
     def analyze_chart(self, full_report: bool = True) -> list:
@@ -139,14 +304,14 @@ class ChartAnalysis:
         cusps = chart_positions['HouseCusps']
         aspects_list = chart_positions['Aspects']
 
-        report.append("")
-
         # ----------------------------------------------------------------------
         # השמש הירח והאופק האסטרולוגי
         # ----------------------------------------------------------------------
+        report.append("")
         report.append("\n" + "=" * 80)
         report.append("השמש הירח והאופק העולה")
-        report.append("=" * 80 + "\n")
+        report.append("=" * 80)
+        report.append("")
 
         ascendant_degree = cusps[1]
         heb_ascendant_sign = self.get_sign_from_degree(ascendant_degree)
@@ -161,14 +326,15 @@ class ChartAnalysis:
         sun_moon_ascendant_analysis = self._fetch_analysis('sun_moon_ascendant', sun_moon_ascendant_key,
                                                            f"ניתוח {sun_moon_ascendant_title} לא נמצא.")
         report.append(f"{sun_moon_ascendant_analysis}")
-        report.append("")
 
         # ----------------------------------------------------------------------
         # מיקומי הבתים והכוכבים במזלות
         # ----------------------------------------------------------------------
+        report.append("")
         report.append("\n" + "=" * 80)
         report.append("מיקומי הבתים והכוכבים במזלות")
         report.append("=" * 80 + "\n")
+        report.append("")
 
         for h in range(1, 13):
             cusp_degree = cusps[h]
@@ -192,39 +358,62 @@ class ChartAnalysis:
             is_intercepted = self.is_sign_intercepted(cusps, cusp_sign)
             intercepted_str = " (מזל כלוא)" if is_intercepted else ""
 
+            # house
             report.append(f"בית {h}\n")
             report.append(house_analysis + "\n")
             report.append("")
+            # sign
             report.append(f"מזל {cusp_sign}\n")
             report.append(f"{sign_analysis}\n")
             report.append("")
+            # house in sign
             report.append(f"{heb_house} ב{cusp_sign}{intercepted_str}\n")
             report.append(f"{house_in_sign_analysis}\n")
             report.append("")
 
-            # התייחסות לכוכבים הנמצאים בבית
             for planet, data in planets_data.items():
                 if data['house'] != h:
                     continue
+                if planet in ['אופק (AC)', 'רום שמיים (MC)']:
+                    continue
                 planet_sign = data['sign']
                 is_retro = data['is_retrograde']
+                is_inter = self.is_sign_intercepted(cusps, planet_sign)
+                is_retro_str = " retrograde" if is_retro else ""
+                is_inter_str = " intercepted" if is_inter else ""
+
+                # מפתחות לניתוחים הפשוטים (כבר נקיים, אבל עדיין עברו דרך _normalize_key ב-_fetch_analysis)
                 planet_in_house_key = f"{self.PLANET_NAMES_ENG[planet]} in {self.HOUSE_NAMES_ENG_FULL[h - 1]}"
                 planet_in_sign_key = f"{self.PLANET_NAMES_ENG[planet]} in {self.SIGN_NAMES_ENG[planet_sign]}"
-                # TODO להוסיף ניתוח כוכב בנסיגה
+
+                # המפתח המורכב (שבו הייתה כנראה הבעיה הגדולה ביותר של רווחים)
+                raw_planet_house_sign_key = (
+                    f"{self.PLANET_NAMES_ENG[planet]}{is_retro_str} in "
+                    f"{self.HOUSE_NAMES_ENG_FULL[h - 1]} in "
+                    f"{self.SIGN_NAMES_ENG[planet_sign]}{is_inter_str}"
+                )
+
+                # 🚀 FIX: שימוש בפונקציית הנירמול כדי לוודא שאין רווחים מיותרים בין ה-"retrograde"/"intercepted" לשאר הטקסט
+                planet_house_sign_key = self._normalize_key(raw_planet_house_sign_key)
+                # planet
                 planet_analysis = self._fetch_analysis('planets', planet, f"ניתוח {planet} לא נמצא.")
                 report.append(f"{planet}\n")
                 report.append(f"{planet_analysis}\n")
                 report.append("")
-                # TODO להוסיף ניתוח כוכב בבית בנסיגה
+                # planet in house
                 planet_in_house_analysis = self._fetch_analysis('planet_in_house', planet_in_house_key, f"ניתוח {planet} ב{heb_house[1:]} לא נמצא.")
                 report.append(f"{planet} ב{heb_house[1:]}\n")
                 report.append(f"{planet_in_house_analysis}\n")
                 report.append("")
-                # TODO להוסיף ניתוח כוכב במזל בנסיגה ובמזל כלוא
-                planet_in_sign_analysis = self._fetch_analysis('planet_in_sign', planet_in_sign_key,
-                                                                f"ניתוח {planet} ב{planet_sign} לא נמצא.")
+                # planet in sign
+                planet_in_sign_analysis = self._fetch_analysis('planet_in_sign', planet_in_sign_key, f"ניתוח {planet} ב{planet_sign} לא נמצא.")
                 report.append(f"{planet} ב{planet_sign}\n")
                 report.append(f"{planet_in_sign_analysis}\n")
+                report.append("")
+                # planet in house in sign
+                planet_house_sign_analysis = self._fetch_analysis('planet_house_sign', planet_house_sign_key, f"ניתוח {planet} ב{heb_house[1:]} ב{planet_sign}{is_inter_str}{is_retro_str} לא נמצא.")
+                report.append(f"{planet} ב{heb_house[1:]} ב{planet_sign}{is_inter_str}{is_retro_str}\n")
+                report.append(f"{planet_house_sign_analysis}\n")
                 report.append("")
 
             try:
@@ -246,6 +435,7 @@ class ChartAnalysis:
                 # --- בניית מפתח שליפה מדויק ---
                 is_retro_str = 'which is retrograde ' if is_ruler_retrograde else ''
                 is_intercepted_str = ' which is intercepted' if is_ruler_sign_intercepted else ''
+                is_intercepted_heb_str = 'הכלוא ' if is_ruler_sign_intercepted else ''
                 house_name = self.HOUSE_NAMES_ENG[h - 1]
                 ruler_eng = self.PLANET_NAMES_ENG.get(ruler, ruler)
                 cusp_sign_eng = self.SIGN_NAMES_ENG.get(cusp_sign, cusp_sign)
@@ -261,7 +451,7 @@ class ChartAnalysis:
                 ruler_analysis = h2h_data.get(analysis_key,
                                               f"❌ ניתוח מפתח זה לא נמצא במאגר")
 
-                report.append(f"{heb_house} ב{cusp_sign} ושליט הבית ({ruler}) ממוקם בבית {ruler_house} ובמזל {ruler_sign}")
+                report.append(f"{heb_house} ב{cusp_sign} ושליט הבית ({ruler}) ממוקם בבית {ruler_house} ובמזל {is_intercepted_heb_str}{ruler_sign}")
                 report.append(f"{ruler_analysis}\n")
                 # report.append("-" * 80)
 
@@ -269,11 +459,14 @@ class ChartAnalysis:
                 report.append(f"\n⚠️ שגיאה בניתוח בית {h}: {e}\n")
 
             report.append("")
-            report.append("-" * 80 + "\n")
+            if h != 12:
+                report.append("-" * 80 + "\n")
+                report.append("")
 
         # ----------------------------------------------------------------------
         # ההיבטים (הקשרים והדינמיקה)
         # ----------------------------------------------------------------------
+        report.append("")
         report.append("=" * 80)
         report.append("ההיבטים (הקשרים והדינמיקה)")
         report.append("=" * 80)
@@ -286,7 +479,7 @@ class ChartAnalysis:
         for aspect in aspects_list:
             p1 = aspect['planet1']
             p2 = aspect['planet2']
-            aspect_name = aspect['aspect_name_heb']
+            aspect_name = self.ASPECTS_DICT_HEB[aspect['aspect_name_heb']]
 
             # נרמול שם ההיבט - הסרת מקפים לצורך חיפוש
             aspect_name_normalized = aspect['aspect_name_eng'].replace('-', '')
@@ -312,8 +505,9 @@ class ChartAnalysis:
             if not analysis:
                 analysis = f"❌ ניתוח היבט זה לא נמצא במאגר: {key_1} / {key_2}"
 
-            report.append(f"\n{p1} {aspect_name} {p2} (אורב: {aspect['orb']:.2f}°)")
+            report.append(f"\n{p1} {aspect_name} {p2} (orb: {aspect['orb']:.2f}°)")
             report.append(f"\n{analysis}\n")
-            report.append("-" * 80)
+            if aspect != aspects_list[-1]:
+                report.append("-" * 80)
 
         return report

@@ -21,16 +21,16 @@ API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-fl
 API_KEYS = os.getenv("NEW_API_KEYS")
 
 # קובץ קלט המכיל את ההיבטים (שורה לכל היבט)
-INPUT_FILE = "planets.txt"
+INPUT_FILE = "planet_house_sign_analysis_errors.txt"
 
 # קובץ פלט אליו ייכתבו הניתוחים
-OUTPUT_FILE = "planets_output.txt"
+OUTPUT_FILE = "planet_house_sign_analysis_errors_output.txt"
 
 # הגדרת מקסימום הליכים (Threads) מקבילים
-MAX_WORKERS = 1
+MAX_WORKERS = 150
 
 # משתנים גלובליים לניהול מפתחות
-CURRENT_KEY_INDEX = 2
+CURRENT_KEY_INDEX = 1
 # הגדרה ראשונית של המפתח: אם הריצה הקודמת עבדה על מפתח מס' 2, התחל ממנו
 # אם אתה רוצה להתחיל מהמפתח הראשון שלא נחסם (למשל מפתח #3), שנה את האינדקס כאן:
 # CURRENT_KEY_INDEX = 2

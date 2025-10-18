@@ -50,6 +50,10 @@ def _load_simple_data(filename: str) -> dict:
     return data
 
 
+# src/birth_chart_analysis/DataLoaders.py
+
+# ... (פונקציות קודמות)
+
 def _load_structured_data(filename: str) -> dict:
     """
     טעינת נתונים מקבצים עם כותרות בפורמט אנגלי
@@ -82,8 +86,12 @@ def _load_structured_data(filename: str) -> dict:
                         is_header = True
 
                 if is_header:
-                    # נרמול המפתח - הסרת מקפים לאחידות
-                    current_key = line.replace('-', '')
+                    # 🚀 FIX: נירמול מלא של המפתח
+                    # הסרת רווחים מיותרים מההתחלה והסוף, ולאחר מכן נירמול רווחים כפולים פנימיים
+                    normalized_key = " ".join(line.split()).strip()
+                    # בנוסף, הסרת מקפים לאחידות (כפי שהיה קודם, אך אחרי הנירמול)
+                    current_key = normalized_key.replace('-', '')
+
                     data[current_key] = ""
                 elif current_key:
                     # הוסף תוכן עם רווח
@@ -142,6 +150,7 @@ def load_all_chart_data():
         'planet_in_sign': _load_structured_data('planet_in_sign.txt'),
         'planet_in_house': _load_structured_data('planet_in_house.txt'),
         'house_in_sign': _load_structured_data('house_in_sign.txt'),
+        'planet_house_sign': _load_structured_data('planet_house_sign.txt'),
         'aspects': _load_structured_data('aspects.txt'),
         'sun_moon_ascendant': _load_structured_data('sun_moon_ascendant.txt'),
         'house_to_house': _load_house_to_house_data('house_to_house.txt'),
