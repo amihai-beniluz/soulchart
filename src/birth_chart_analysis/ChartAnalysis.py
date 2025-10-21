@@ -157,7 +157,7 @@ class ChartAnalysis:
         # הרשימה כוללת גופים רלוונטיים בלבד
         reportable_planets = [
             'שמש', 'ירח', 'מרקורי', 'ונוס', 'מאדים', 'צדק',
-            'שבתאי', 'אורנוס', 'נפטון', 'פלוטו', 'ראש דרקון', 'כירון',
+            'שבתאי', 'אורנוס', 'נפטון', 'פלוטו', 'ראש דרקון', 'לילית', 'כירון',
             'אופק (AC)', 'רום שמיים (MC)', 'פורטונה', 'ורטקס'
         ]
 
@@ -207,8 +207,8 @@ class ChartAnalysis:
             orb = aspect['orb']
 
             # הוספת סוג המפה (נטאלי/מעבר)
-            p1_type_str = f" ({'נטאל' if aspect.get('p1_type') == 'natal' else 'מעבר'})"
-            p2_type_str = f" ({'מעבר' if aspect.get('p2_type') == 'transit' else 'נטאל'})"
+            p1_type_str = f" ({'לידה' if aspect.get('p1_type') == 'natal' else 'מעבר'})"
+            p2_type_str = f" ({'מעבר' if aspect.get('p2_type') == 'transit' else 'לידה'})"
 
             report.append(f"✅ {p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str} | אורב: {orb:.2f}°")
 
@@ -236,7 +236,7 @@ class ChartAnalysis:
                 self.user.location[1]
             )
         except Exception as e:
-            return [f"❌ שגיאה בחישוב המפה הנטאלית: {e}"]
+            return [f"❌ שגיאה בחישוב המפה הלידתית: {e}"]
 
         # 2. חישוב מיקומי כוכבים נוכחיים (מעבר/טרנזיט)
         try:
@@ -266,7 +266,7 @@ class ChartAnalysis:
         # דוח נטאל (כולל בתים)
         report.extend(self._format_positions_report(
             natal_chart_positions['Planets'],
-            "1. מיקומי כוכבי הלידה (נטאלי)",
+            "1. מיקומי כוכבי הלידה (לידתי)",
             include_house=True
         ))
 

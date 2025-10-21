@@ -19,9 +19,11 @@ ENG_ZODIAC_SIGNS = ['Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
 # (בניגוד לנטאל, לא נחשב כאן ראשי בתים נוספים כמו MC/AC כי הם סטטיים למיקום הלידה)
 # נכלול רק את 10 הגופים הראשיים + כירון, ראש דרקון.
 PLANET_IDS_FOR_TRANSIT = {
-    'שמש': swe.SUN, 'ירח': swe.MOON, 'מרקורי': swe.MERCURY, 'ונוס': swe.VENUS,
-    'מאדים': swe.MARS, 'צדק': swe.JUPITER, 'שבתאי': swe.SATURN, 'אורנוס': swe.URANUS,
-    'נפטון': swe.NEPTUNE, 'פלוטו': swe.PLUTO, 'ראש דרקון': swe.MEAN_NODE, 'כירון': swe.CHIRON
+    'שמש': swe.SUN, 'ירח': swe.MOON, 'מרקורי': swe.MERCURY,
+    'ונוס': swe.VENUS, 'מאדים': swe.MARS, 'צדק': swe.JUPITER,
+    'שבתאי': swe.SATURN, 'אורנוס': swe.URANUS, 'נפטון': swe.NEPTUNE,
+    'פלוטו': swe.PLUTO, 'ראש דרקון': swe.MEAN_NODE, 'לילית': swe.MEAN_APOG,
+    'כירון': swe.CHIRON
 }
 
 # הגדרות היבטים - כל 11 ההיבטים העיקריים והמשניים
@@ -40,9 +42,26 @@ ASPECTS_DICT = {
     144: 'Biquintile'  # ביקווינטייל
 }
 
-# הגדרות סטיית אורב (פשוטות)
-ORB = 6.0  # ניתן להשאיר על 8.0, או להחליט על אורבים שונים לאספקטים משניים
+# הגדרות אורבים ספציפיות לכל היבט
+# אורבים מקובלים: מז'וריים (Conjunction, Opposition, Trine, Square, Sextile) עם אורב גבוה,
+# ומינוריים (Inconjunct, SemiSextile, SemiSquare, Sesquiquadrate, Quintile, Biquintile) עם אורב נמוך יותר.
+# הגדרות אורבים ספציפיות המבטאות העדפה לזוויות רחבות (אורב גבוה יותר)
+ASPECT_ORBS = {
+    # היבטים מז'וריים - חזקים:
+    'Conjunction': 10.0,  # היצמדות
+    'Opposition': 10.0,  # ניגוד
+    'Square': 9.0,  # ריבוע
+    'Trine': 8.0,  # טרין
+    'Sextile': 6.0,  # סקסטייל
 
+    # היבטים משניים - חלשים:
+    'Inconjunct': 2.5,  # קווינקונקס
+    'SemiSquare': 2.0,  # סמי-ריבוע
+    'Sesquiquadrate': 2.0,  # סקווירפיינד
+    'SemiSextile': 1.5,  # סמי-סקסטייל
+    'Quintile': 1.0,  # קווינטייל
+    'Biquintile': 1.0  # ביקווינטייל
+}
 
 # ----------------------------------------------------
 # פונקציות עזר קריטיות
@@ -95,7 +114,6 @@ def calculate_aspects(planets_data: dict) -> list[dict]:
     מחשב היבטים עיקריים בין כל זוג כוכבים.
     """
     aspects_list = []
-    # עדכון: שימוש ברשימה מלאה של גופים שחושבו בתוספת נקודות
     major_planets = list(planets_data.keys())
 
     for i in range(len(major_planets)):
@@ -108,29 +126,31 @@ def calculate_aspects(planets_data: dict) -> list[dict]:
 
             lon1 = planets_data[p1_name]['lon_deg']
             lon2 = planets_data[p2_name]['lon_deg']
-
-            # חישוב ההפרש הזוויתי (הקצר יותר)
             angle_diff = abs(lon1 - lon2)
             angle_diff = min(angle_diff, 360 - angle_diff)
 
-            # מציאת ההיבט הקרוב ביותר (עם האורב הקטן ביותר)
             best_aspect = None
-            best_orb = ORB + 1  # אתחול עם ערך גבוה מהאורב המקסימלי
+            # אתחול עם אורב שחורג מהמקסימום בכל המקרים
+            best_orb_value = max(ASPECT_ORBS.values()) + 1
 
             for angle, name in ASPECTS_DICT.items():
+                # **שינוי מרכזי: קבלת האורב הספציפי**
+                max_orb_for_aspect = ASPECT_ORBS.get(name, 0.5)  # השתמש ב-0.5 כברירת מחדל נמוכה לבטיחות
+
                 current_orb = abs(angle_diff - angle)
-                if current_orb <= ORB and current_orb < best_orb:
-                    best_orb = current_orb
+
+                # בדיקה כפולה: 1. האם הוא בתוך האורב המקסימלי? 2. האם הוא קרוב יותר מההיבט שנמצא עד כה?
+                if current_orb <= max_orb_for_aspect and current_orb < best_orb_value:
+                    best_orb_value = current_orb
                     best_aspect = {
                         'planet1': p1_name,
                         'planet2': p2_name,
-                        'aspect_name_heb': name,
+                        'aspect_name_heb': name,  # יש לשנות לשם עברי/אנגלי מתאים אם קיים
                         'aspect_name_eng': name,
                         'angle_diff': angle_diff,
                         'orb': current_orb
                     }
 
-            # אם נמצא היבט, הוסף אותו לרשימה
             if best_aspect:
                 aspects_list.append(best_aspect)
 
