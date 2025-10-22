@@ -1,9 +1,12 @@
-# src/birth_chart_analysis/CalculationEngine.py
-
 import swisseph as swe
 from datetime import datetime
 import pytz
 import math
+import os
+
+MODULE_DIR = os.path.dirname(__file__)
+PROJECT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir, os.pardir))
+EPHE_DIR = os.path.join(PROJECT_DIR, 'data', 'ephe')
 
 # הגדרת שמות המזלות
 ZODIAC_SIGNS = ['טלה', 'שור', 'תאומים', 'סרטן', 'אריה', 'בתולה',
@@ -12,12 +15,8 @@ ZODIAC_SIGNS = ['טלה', 'שור', 'תאומים', 'סרטן', 'אריה', 'ב�
 ENG_ZODIAC_SIGNS = ['Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
                     'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces']
 
-# src/birth_chart_analysis/CalculationEngine.py
-# ... (שאר תוכן הקובץ, כולל הייבואים והגדרות הקבועים) ...
-
 # רשימת גופים פלנטריים שבהם נשתמש לחישוב טרנזיטים
 # (בניגוד לנטאל, לא נחשב כאן ראשי בתים נוספים כמו MC/AC כי הם סטטיים למיקום הלידה)
-# נכלול רק את 10 הגופים הראשיים + כירון, ראש דרקון.
 PLANET_IDS_FOR_TRANSIT = {
     'שמש': swe.SUN, 'ירח': swe.MOON, 'מרקורי': swe.MERCURY,
     'ונוס': swe.VENUS, 'מאדים': swe.MARS, 'צדק': swe.JUPITER,
@@ -25,6 +24,9 @@ PLANET_IDS_FOR_TRANSIT = {
     'פלוטו': swe.PLUTO, 'ראש דרקון': swe.MEAN_NODE, 'לילית': swe.MEAN_APOG,
     'כירון': swe.CHIRON
 }
+
+# רשימת גופים שהם נקודות (לא כוכבים), כדי לא לסמן אותם כנסיגה
+POINT_OBJECTS = [swe.MEAN_NODE, swe.TRUE_NODE, swe.MEAN_APOG, swe.OSCU_APOG]
 
 # הגדרות היבטים - כל 11 ההיבטים העיקריים והמשניים
 # זווית : שם ההיבט
@@ -63,9 +65,11 @@ ASPECT_ORBS = {
     'Biquintile': 1.0  # ביקווינטייל
 }
 
+
 # ----------------------------------------------------
 # פונקציות עזר קריטיות
 # ----------------------------------------------------
+
 
 def ensure_float(value) -> float:
     """
@@ -162,12 +166,6 @@ def calculate_chart_positions(birth_datetime: datetime, lat: float, lon: float) 
     מחשב את מפת הלידה המלאה באמצעות pyswisseph.
     """
 
-    # --- הגדרת נתיב לקבצי האפמריס ---
-    import os
-    MODULE_DIR = os.path.dirname(__file__)
-    PROJECT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir, os.pardir))
-    EPHE_DIR = os.path.join(PROJECT_DIR, 'data', 'ephe')
-
     # ודא שהנתיב קיים לפני שמנסים להגדיר אותו
     if os.path.exists(EPHE_DIR):
         swe.set_ephe_path(EPHE_DIR)
@@ -207,9 +205,6 @@ def calculate_chart_positions(birth_datetime: datetime, lat: float, lon: float) 
         'Aspects': []
     }
 
-    # רשימת גופים שהם נקודות (לא כוכבים), כדי לא לסמן אותם כנסיגה
-    POINT_OBJECTS = [swe.MEAN_NODE, swe.TRUE_NODE, swe.MEAN_APOG, swe.OSCU_APOG]
-
     # 3. לולאה על הכוכבים לחישוב מיקום
     for name, num in celestial_bodies.items():
         try:
@@ -221,9 +216,7 @@ def calculate_chart_positions(birth_datetime: datetime, lat: float, lon: float) 
                 print(f"⚠️ אזהרה: תוצאה לא תקינה מ-calc_ut עבור {name}")
                 continue
 
-            # פירוק: position_data ו-flags (בסדר הזה!)
             position_data = calc_result[0]
-            flags = calc_result[1]
 
             # וידוא ש-position_data הוא tuple/list עם לפחות 4 ערכים
             if not isinstance(position_data, (list, tuple)) or len(position_data) < 4:
@@ -232,8 +225,6 @@ def calculate_chart_positions(birth_datetime: datetime, lat: float, lon: float) 
 
             # פירוק הנתונים מתוך position_data
             lon = float(position_data[0])  # קו אורך אקליפטי
-            lat_planet = float(position_data[1])  # קו רוחב אקליפטי
-            distance = float(position_data[2])  # מרחק
             vel = float(position_data[3])  # מהירות בקו אורך
 
             # בדיקת נסיגה
@@ -350,7 +341,7 @@ def calculate_current_positions(dt_object: datetime, lat: float, lon: float) -> 
 
     # המרת תאריך ושעה ליום יוליאני (JD) של זמן אוניברסלי (UT)
     jd_ut = swe.julday(dt_object.year, dt_object.month, dt_object.day,
-                      dt_object.hour + dt_object.minute / 60.0 + dt_object.second / 3600.0)
+                       dt_object.hour + dt_object.minute / 60.0 + dt_object.second / 3600.0)
 
     # הגדרת דגלים לחישובים (אורך אקליפטי, גאוצנטרי, אסטרולוגי)
     flags = swe.FLG_SWIEPH | swe.FLG_TOPOCTR | swe.FLG_EQUATORIAL
@@ -392,7 +383,6 @@ def calculate_transit_aspects(natal_planets: dict, transit_planets: dict) -> lis
 
     :param natal_planets: מיקומי כוכבי הלידה (מילון: שם: {lon_deg: X, ...}).
     :param transit_planets: מיקומי כוכבי המעבר (מילון: שם: {lon_deg: X, ...}).
-    :param orb: האורב המקסימלי במעלות.
     :return: רשימה של מילונים המייצגים את ההיבטים.
     """
     aspects_list = []

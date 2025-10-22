@@ -76,6 +76,10 @@ class ChartAnalysis:
         if ChartAnalysis.chart_data is None:
             ChartAnalysis.chart_data = load_all_chart_data()
 
+    def get_raw_chart_data(self) -> dict:
+        """מחזיר את נתוני המפה המלאים (ללא הניתוח הטקסטואלי)"""
+        return self.chart_data
+
     def get_sign_from_degree(self, degree: float) -> str:
         """ ממיר מעלה לזיהוי מזל. """
         # וידוא שהערך הוא מספר

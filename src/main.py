@@ -2,9 +2,11 @@ import os
 from datetime import datetime
 
 from birth_chart_analysis.ChartAnalysis import ChartAnalysis
+from birth_chart_analysis.ChartDrawer import draw_and_save_chart
+from birth_chart_analysis.CalculationEngine import calculate_chart_positions
 from name_analysis.NameAnalysis import NameAnalysis
 from user import User
-from utils import write_results_to_file, get_validated_date, get_validated_time, get_location_input
+from utils import write_results_to_file, get_validated_date, get_validated_time
 
 MODULE_DIR = os.path.dirname(__file__)
 PROJECT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir))
@@ -50,6 +52,7 @@ def get_user_input():
 
 
 def main():
+    import traceback
     user, nikud_dict = get_user_input()
 
     # 1. ניתוח שם (הפונקציה הקיימת)
@@ -61,15 +64,39 @@ def main():
     except Exception as e:
         print(f"\n❌ אירעה שגיאה בניתוח שם: {e}")
 
-    # 2. ניתוח מפת לידה (הפונקציה החדשה) - כעת מחוץ ל-except!
+    # 2. ניתוח מפת לידה
     print("\n--- ביצוע ניתוח מפת לידה ---")
     try:
+        # בדיקה שיש נתונים מספיקים
+        if not user.location or not user.birthtime:
+            print(f"⚠️ חסרים נתונים לחישוב מפה מדויקת (שעה או מיקום)")
+            return
+
         chart_analysis = ChartAnalysis(user)
-        chart_result = chart_analysis.analyze_chart(True)
-        write_results_to_file(CHARTS_DIR, user.name, chart_result, "_chart.txt")
+
+        # ✅ חישוב נתוני המפה הגולמיים (Planets, HouseCusps, Aspects)
+        birth_datetime = datetime.combine(user.birthdate, user.birthtime)
+        chart_positions = calculate_chart_positions(
+            birth_datetime,
+            user.location[0],  # Latitude
+            user.location[1]  # Longitude
+        )
+
+        print(f"\n✅ חישוב מפה הושלם:")
+        print(f"   📊 {len(chart_positions.get('Planets', {}))} פלנטות")
+        print(f"   🏠 {len(chart_positions.get('HouseCusps', {}))} בתים")
+        print(f"   🔗 {len(chart_positions.get('Aspects', []))} אספקטים")
+
+        # ביצוע ניתוח טקסטואלי
+        report_text = chart_analysis.analyze_chart(True)
+        write_results_to_file(CHARTS_DIR, user.name, report_text, "_chart.txt")
+
+        # ציור ושמירת מפת הלידה כתמונה
+        image_filename = os.path.join(CHARTS_DIR, f"{user.name}_chart.png")
+        draw_and_save_chart(chart_positions, user, image_filename)
+
     except Exception as e:
         print(f"\n❌ אירעה שגיאה בניתוח מפת לידה: {e}")
-        import traceback
         traceback.print_exc()
 
 
