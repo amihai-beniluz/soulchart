@@ -3,8 +3,8 @@ import re
 import unicodedata
 
 # --- הגדרות קבצים ---
-FULL_INPUT_FILE = "sun_moon_ascendant.txt"
-OUTPUT_FILE = "sun_moon_ascendant_output.txt"
+FULL_INPUT_FILE = "aspects_transit.txt"
+OUTPUT_FILE = "aspects_transit_output.txt"
 MISSING_OUTPUT_FILE = "missing_aspects_list.txt"
 
 

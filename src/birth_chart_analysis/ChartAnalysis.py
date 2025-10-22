@@ -1,13 +1,9 @@
-# src/birth_chart_analysis/ChartAnalysis.py
-
 from datetime import datetime
-import textwrap
 import traceback
 import math
 
-# ייבוא מהמודולים השכנים
 from .CalculationEngine import calculate_chart_positions, ZODIAC_SIGNS, ENG_ZODIAC_SIGNS, calculate_current_positions, calculate_transit_aspects
-from .DataLoaders import load_all_chart_data
+from .ChartDataLoaders import load_all_chart_data
 
 
 class ChartAnalysis:
@@ -23,10 +19,7 @@ class ChartAnalysis:
     SIGN_RULERS = {
         'טלה': 'מאדים', 'שור': 'ונוס', 'תאומים': 'מרקורי', 'סרטן': 'ירח',
         'אריה': 'שמש', 'בתולה': 'מרקורי', 'מאזניים': 'ונוס',
-        'עקרב': 'פלוטו',  # מודרני
-        'קשת': 'צדק', 'גדי': 'שבתאי',
-        'דלי': 'אורנוס',  # מודרני
-        'דגים': 'נפטון'  # מודרני
+        'עקרב': 'פלוטו', 'קשת': 'צדק', 'גדי': 'שבתאי', 'דלי': 'אורנוס', 'דגים': 'נפטון'
     }
 
     # מפת שמות באנגלית לשליפה ממאגר הנתונים
@@ -35,8 +28,8 @@ class ChartAnalysis:
         'ונוס': 'Venus', 'מאדים': 'Mars', 'צדק': 'Jupiter',
         'שבתאי': 'Saturn', 'אורנוס': 'Uranus', 'נפטון': 'Neptune',
         'פלוטו': 'Pluto', 'ראש דרקון': 'North Node', 'לילית': 'Lilith',
-        'כירון': 'Chiron', 'אופק (AC)': 'AC', 'רום שמיים (MC)': 'MC', 'פורטונה': 'Fortune',
-        'ורטקס': 'Vertex'
+        'כירון': 'Chiron', 'אופק (AC)': 'AC', 'רום שמיים (MC)': 'MC',
+        'פורטונה': 'Fortune', 'ורטקס': 'Vertex'
     }
 
     SIGN_NAMES_ENG = {
@@ -98,7 +91,6 @@ class ChartAnalysis:
             degree = float(degree[0])
         degree = float(degree) % 360
         return ENG_ZODIAC_SIGNS[int(degree // 30)]
-
 
     def is_sign_intercepted(self, house_cusps: list, sign: str) -> bool:
         """
@@ -185,7 +177,7 @@ class ChartAnalysis:
         report.append("\n")
         return report
 
-    def _format_aspects_report(self, aspects_list: list, title: str) -> list:
+    def _format_aspects_report(self, aspects_list: list, title: str, is_interpreted = False) -> list:
         """מעצבת דוח היבטים (נטאל-נטאל או נטאל-טרנזיט)."""
         report = [
             f"\n{'=' * 80}",
@@ -210,17 +202,33 @@ class ChartAnalysis:
             p1_type_str = f" ({'לידה' if aspect.get('p1_type') == 'natal' else 'מעבר'})"
             p2_type_str = f" ({'מעבר' if aspect.get('p2_type') == 'transit' else 'לידה'})"
 
-            report.append(f"✅ {p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str} | אורב: {orb:.2f}°")
+            report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str} | אורב: {orb:.2f}°")
+
+            if is_interpreted:
+                p1_eng = self.PLANET_NAMES_ENG[p1_heb]
+                p2_eng = self.PLANET_NAMES_ENG[p2_heb]
+                aspect_name = aspect['aspect_name_eng']
+
+                key = f"Natal {p1_eng} {aspect_name} Transit {p2_eng}"
+                aspects_data = self.chart_data.get('aspects_transit', {})
+                analysis = aspects_data.get(key)
+
+                # אם לא נמצא
+                if not analysis:
+                    analysis = f"❌ ניתוח היבט זה לא נמצא במאגר: {key}"
+                report.append(f"\n{analysis}\n")
+                if aspect != aspects_list[-1]:
+                    report.append("-" * 80)
+                report.append("")
 
         report.append("\n")
         return report
 
-    def analyze_transits_and_aspects(self, current_location: tuple) -> list:
+    def analyze_transits_and_aspects(self, current_location: tuple, is_interpreted = False) -> list:
         """
         מבצע השוואה בין מפת הלידה (נטאלית) למיקומי הכוכבים הנוכחיים (מעבר/טרנזיט).
         """
         current_lat, current_lon = current_location
-        ORB_MAX = 6.0  # אורב מקסימלי לטרנזיטים
 
         if not self.user.location or not self.user.birthtime:
             return [f"❌ אין מספיק נתונים לחישוב מדויק (חסרים שעה ו/או מיקום לידה)."]
@@ -253,7 +261,6 @@ class ChartAnalysis:
             transit_aspects_list = calculate_transit_aspects(
                 natal_chart_positions['Planets'],
                 transit_chart_positions['Planets'],
-                ORB_MAX
             )
         except Exception as e:
             print(f"⚠️ אזהרה: שגיאה בחישוב היבטי מעבר: {e}. ממשיכים ללא היבטים.")
@@ -280,7 +287,8 @@ class ChartAnalysis:
         # דוח היבטים
         report.extend(self._format_aspects_report(
             transit_aspects_list,
-            "3. היבטים נוצרים בין כוכבי מעבר ללידה (טרנזיטים)"
+            "3. היבטים נוצרים בין כוכבי מעבר ללידה (טרנזיטים)",
+            is_interpreted
         ))
 
         return report

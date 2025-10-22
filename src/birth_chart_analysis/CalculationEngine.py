@@ -386,7 +386,7 @@ def calculate_current_positions(dt_object: datetime, lat: float, lon: float) -> 
     return chart_data
 
 
-def calculate_transit_aspects(natal_planets: dict, transit_planets: dict, orb: float) -> list:
+def calculate_transit_aspects(natal_planets: dict, transit_planets: dict) -> list:
     """
     מחשב את ההיבטים (Bi-wheel) בין כוכבי מפת הלידה לכוכבי המעבר.
 
@@ -423,6 +423,7 @@ def calculate_transit_aspects(natal_planets: dict, transit_planets: dict, orb: f
                 difference = math.fabs(separation - angle)
 
                 # אם ההפרש קטן מהאורב המקסימלי
+                orb = ASPECT_ORBS.get(aspect_name_eng, 0.5)
                 if difference <= orb:
                     aspects_list.append({
                         'planet1': p1_name_heb,

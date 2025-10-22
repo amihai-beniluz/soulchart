@@ -3,11 +3,11 @@ import re
 import unicodedata
 
 # --- הגדרות קבצים ---
-FULL_INPUT_FILE = "planet_house_sign_whole.txt"
-OUTPUT_FILE = "planet_house_sign.txt"
+FULL_INPUT_FILE = "aspects_transit.txt"
+OUTPUT_FILE = "aspects_transit_output.txt"
 
-FINAL_SORTED_FILE = "planet_house_sign_FINAL_SORTED.txt"
-ERROR_FILE = "planet_house_sign_analysis_errors.txt"
+FINAL_SORTED_FILE = "aspects_transit_FINAL_SORTED.txt"
+ERROR_FILE = "aspects_transits_analysi_errors.txt"
 
 
 # --- פונקציית נורמליזציה (כדי לוודא שיוויון מלא) ---

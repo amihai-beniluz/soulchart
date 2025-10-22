@@ -1,4 +1,3 @@
-# src/birth_chart_analysis/DataLoaders.py
 import os
 
 MODULE_DIR = os.path.dirname(__file__)
@@ -49,10 +48,6 @@ def _load_simple_data(filename: str) -> dict:
 
     return data
 
-
-# src/birth_chart_analysis/DataLoaders.py
-
-# ... (פונקציות קודמות)
 
 def _load_structured_data(filename: str) -> dict:
     """
@@ -140,13 +135,10 @@ def _load_house_to_house_data(filename: str) -> dict:
 def load_all_chart_data():
     """טוען את כל הנתונים האסטרולוגיים לזיכרון"""
     return {
-        # קבצים פשוטים (עברית)
         'planets': _load_simple_data('planets.txt'),
         'signs': _load_simple_data('signs.txt'),
         'houses': _load_simple_data('houses.txt'),
         'chart_rulers': _load_simple_data('chart_rulers.txt'),
-
-        # קבצים מובנים (אנגלית)
         'planet_in_sign': _load_structured_data('planet_in_sign.txt'),
         'planet_in_house': _load_structured_data('planet_in_house.txt'),
         'house_in_sign': _load_structured_data('house_in_sign.txt'),
@@ -154,4 +146,5 @@ def load_all_chart_data():
         'aspects': _load_structured_data('aspects.txt'),
         'sun_moon_ascendant': _load_structured_data('sun_moon_ascendant.txt'),
         'house_to_house': _load_house_to_house_data('house_to_house.txt'),
+        'aspects_transit': _load_structured_data('aspects_transit.txt')
     }

@@ -1,11 +1,8 @@
 import requests
-import json
 import os
 import time
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import sys
-# *** שינוי קריטי: ייבוא Lock ***
 from threading import Lock
 
 # --- הגדרות ---
@@ -21,16 +18,16 @@ API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-fl
 API_KEYS = os.getenv("NEW_API_KEYS")
 
 # קובץ קלט המכיל את ההיבטים (שורה לכל היבט)
-INPUT_FILE = "planet_house_sign_analysis_errors.txt"
+INPUT_FILE = "aspects_transit.txt"
 
 # קובץ פלט אליו ייכתבו הניתוחים
-OUTPUT_FILE = "planet_house_sign_analysis_errors_output.txt"
+OUTPUT_FILE = "aspects_transit_output.txt"
 
 # הגדרת מקסימום הליכים (Threads) מקבילים
 MAX_WORKERS = 150
 
 # משתנים גלובליים לניהול מפתחות
-CURRENT_KEY_INDEX = 1
+CURRENT_KEY_INDEX = 0
 # הגדרה ראשונית של המפתח: אם הריצה הקודמת עבדה על מפתח מס' 2, התחל ממנו
 # אם אתה רוצה להתחיל מהמפתח הראשון שלא נחסם (למשל מפתח #3), שנה את האינדקס כאן:
 # CURRENT_KEY_INDEX = 2
@@ -127,7 +124,7 @@ def get_llm_response(aspect_name):
         {
             "role": "user",
             "parts": [
-                {"text": "תאר את המשמעות האסטרולוגית של : " + aspect_name}
+                {"text": "תאר את המשמעות האסטרולוגית של ההיבט: " + aspect_name}
             ]
         }
     ]

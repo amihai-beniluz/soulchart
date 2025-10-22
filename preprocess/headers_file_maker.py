@@ -3,9 +3,14 @@
 # הגדרת הקבוצות
 planets = [
     "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus",
-    "Neptun", "Pluto", "Ciron", "Lilith", "North Node", "Fortune", "Vertex",
-    "AC", "DC", "IC", "MC"
+    "Neptune", "Pluto", "North Node", "Lilith", "Chiron", "AC", "MC", "Fortune", "Vertex"
 ]
+
+planets_transit = [
+    "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus",
+    "Neptune", "Pluto", "North Node", "Lilith", "Chiron"
+]
+
 
 houses = [
     "First house", "Second house", "Third house", "Fourth house", "Fifth house",
@@ -18,6 +23,20 @@ signs = [
     "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"
 ]
 
+ASPECTS_DICT = {
+    0: 'Conjunction',  # היצמדות
+    180: 'Opposition',  # ניגוד
+    120: 'Trine',  # טרין
+    90: 'Square',  # ריבוע
+    60: 'Sextile',  # סקסטייל
+    150: 'Inconjunct',  # קווינקונקס
+    30: 'SemiSextile',  # סמי-סקסטייל
+    45: 'SemiSquare',  # סמי-ריבוע
+    135: 'Sesquiquadrate',  # סקווירפיינד
+    72: 'Quintile',  # קווינטייל
+    144: 'Biquintile'  # ביקווינטייל
+}
+
 retro = [
     " retrograde", ""
 ]
@@ -27,18 +46,15 @@ inter = [
 ]
 
 # שם הקובץ שייווצר
-file_name = "planet_house_sign_whole.txt"
+file_name = "aspects_transit.txt"
 
 # יצירת המכפלה הקרטזית ושמירה לרשימה
 all_combinations = []
-for planet in planets:
-    for house in houses:
-        for sign in signs:
-            for r in retro:
-                for i in inter:
-                    # הפורמט הנדרש: 'כוכב in בית in מזל'
-                    combination = f"{planet}{r} in {house} in {sign}{i}"
-                    all_combinations.append(combination)
+for planet1 in planets:
+    for _, aspect in ASPECTS_DICT.items():
+        for planet2 in planets_transit:
+            combination = f"Natal {planet1} {aspect} Transit {planet2}"
+            all_combinations.append(combination)
 
 # כתיבת השילובים לקובץ טקסט
 try:
