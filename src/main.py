@@ -82,11 +82,6 @@ def main():
             user.location[1]  # Longitude
         )
 
-        print(f"\n✅ חישוב מפה הושלם:")
-        print(f"   📊 {len(chart_positions.get('Planets', {}))} פלנטות")
-        print(f"   🏠 {len(chart_positions.get('HouseCusps', {}))} בתים")
-        print(f"   🔗 {len(chart_positions.get('Aspects', []))} אספקטים")
-
         # ביצוע ניתוח טקסטואלי
         report_text = chart_analysis.analyze_chart(True)
         write_results_to_file(CHARTS_DIR, user.name, report_text, "_chart.txt")

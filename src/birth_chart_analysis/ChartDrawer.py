@@ -1,7 +1,5 @@
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import numpy as np
-import math
 
 # הגדרת גופן עברי
 plt.rcParams['font.family'] = 'DejaVu Sans'
@@ -102,6 +100,44 @@ def calculate_aspect(angle1, angle2, orb=8):
     return None, None
 
 
+def draw_degree_marks(ax, ascendant_degree, inner_radius=0.75):
+    """
+    מצייר שנתות מעלות (סרגל דרגות) בתוך טבעת הבתים/מזלות.
+    :param ax: ציר matplotlib
+    :param ascendant_degree: מעלת האופק
+    :param inner_radius: רדיוס התחלה של השנתות (הצד החיצוני של טבעת הפלנטות)
+    """
+    for degree in range(0, 360):
+        chart_angle = convert_to_chart_angle(degree, ascendant_degree)
+        angle_rad = np.deg2rad(chart_angle)
+
+        is_ten_deg = (degree % 10) == 0
+        is_five_deg = (degree % 5) == 0 and not is_ten_deg
+
+        # קביעת אורך הקו
+        if is_ten_deg:
+            length_factor = 0.05
+            linewidth = 1.0
+        elif is_five_deg:
+            length_factor = 0.025
+            linewidth = 0.7
+        else:
+            length_factor = 0.0125
+            linewidth = 0.5
+
+        # חישוב הרדיוס החיצוני והפנימי של השנתות
+        r_start = inner_radius
+        r_end = inner_radius + length_factor  # מושך את הקו החוצה
+
+        x_start = r_start * np.cos(angle_rad)
+        y_start = r_start * np.sin(angle_rad)
+        x_end = r_end * np.cos(angle_rad)
+        y_end = r_end * np.sin(angle_rad)
+
+        ax.plot([x_start, x_end], [y_start, y_end],
+                color='#34495E', linewidth=linewidth, zorder=5, solid_capstyle='butt')
+
+
 def draw_aspect_lines(ax, planets_positions, orb=8):
     """
     מצייר קווי אספקטים בין פלנטות
@@ -121,7 +157,7 @@ def draw_aspect_lines(ax, planets_positions, orb=8):
                 alpha = 0.6 if aspect_type in ['trine', 'sextile'] else 0.4
 
                 # ציור קו בין הפלנטות דרך המרכז
-                inner_radius = 0.45
+                inner_radius = 0.68
 
                 ax.plot([x1 * (inner_radius / 0.85), x2 * (inner_radius / 0.85)],
                         [y1 * (inner_radius / 0.85), y2 * (inner_radius / 0.85)],
@@ -130,57 +166,94 @@ def draw_aspect_lines(ax, planets_positions, orb=8):
 
 def draw_houses(ax, houses_data, ascendant_degree):
     """
-    מצייר קווי בתים (Houses)
+    מצייר קווי בתים (Houses) ומוסיף את מספר הבית במרכז הגזרה שלו.
     :param ax: ציר matplotlib
-    :param houses_data: מילון נתוני הבתים
+    :param houses_data: מילון נתוני הבתים - {house_num: cusp_deg}
     :param ascendant_degree: מעלת האופק (לחישוב מיקום נכון)
     """
     if not houses_data:
         print("⚠️ אין נתוני בתים לציור")
         return
 
-    print(f"🏠 מצייר {len(houses_data)} בתים...")
+    # 1. מיון הנתונים לפי סדר הבתים וקבלת מעלות ה-cusp
+    cusps = sorted([(house_num, data['cusp_deg'])
+                    for house_num, data in houses_data.items()
+                    if 'cusp_deg' in data], key=lambda x: x[0])
 
+    if not cusps:
+        return
+
+    cusp_degrees = {h: deg for h, deg in cusps}
+
+    # 2. ציור קווי הבתים (ללא שינוי מהותי)
     for house_num in range(1, 13):
-        house_key = f'בית {house_num}'
-        if house_key not in houses_data:
-            print(f"⚠️ חסר מפתח: {house_key}")
+        house_key = house_num
+        if house_key not in cusp_degrees:
             continue
 
-        house_info = houses_data[house_key]
-        cusp_deg = house_info.get('cusp_deg', None)
-
-        if cusp_deg is None:
-            print(f"⚠️ אין cusp_deg לבית {house_num}")
-            continue
+        cusp_deg = cusp_degrees[house_key]
 
         # המרת זווית אסטרולוגית למערכת הציור
         chart_angle = convert_to_chart_angle(cusp_deg, ascendant_degree)
         angle_rad = np.deg2rad(chart_angle)
 
-        # ציור קו מהמרכז ועד לטבעת הפנימית
+        # ציור קו מהמרכז ועד לטבעת הפנימית (0.75)
         x_outer = 0.75 * np.cos(angle_rad)
         y_outer = 0.75 * np.sin(angle_rad)
 
         # בתים מיוחדים (1, 4, 7, 10) יהיו עבים יותר
         is_angular_house = house_num in [1, 4, 7, 10]
+        # ✅ ניתן להגדיר קו האופק/רום שמיים כקו מיוחד ועבה יותר
         linewidth = 2.5 if is_angular_house else 1.0
 
         ax.plot([0, x_outer], [0, y_outer],
                 color='#000000', linewidth=linewidth, alpha=0.9, zorder=20, solid_capstyle='round')
 
-        # הוספת מספר הבית בצד החיצוני של הקו
-        text_radius = 0.65
+    # 3. הוספת מספרי הבתים במרכז כל גזרה
+
+    # ✅ הרדיוס החדש למיקום מספרי הבתים - קרוב יותר למרכז, בדומה לדוגמה
+    text_radius = 0.15
+
+    # מעבר על כל 12 הבתים לחישוב מרכז הבית
+    for i in range(1, 13):
+        house_num = i
+
+        # קצה הבית הנוכחי
+        current_cusp_deg = cusp_degrees.get(house_num)
+
+        # קצה הבית הקודם (הוא הקצה של הבית הקודם, או 360 מעלות אחורה לבית 1)
+        prev_house_num = (house_num - 1) if house_num > 1 else 12
+        prev_cusp_deg = cusp_degrees.get(prev_house_num)
+
+        if current_cusp_deg is None or prev_cusp_deg is None:
+            continue
+
+        # חישוב הזווית המרכזית של גזרת הבית:
+        # הזווית האסטרולוגית משמאל לימין, אז צריך לקחת את הממוצע של הקצה הנוכחי והקצה הקודם.
+
+        # נרמול הפרש הזוויות: בית 12 (330) לבית 1 (15) - הטווח הוא 345-15 (לא 15-330)
+        # 1. חישוב המרחק המעגלי
+        angle_diff = normalize_angle(current_cusp_deg - prev_cusp_deg)
+
+        # 2. חישוב מרכז הבית (הזווית האסטרולוגית הממוצעת)
+        # נוסיף חצי מההפרש לזווית ההתחלה (הקצה של הבית הקודם)
+        center_deg = normalize_angle(prev_cusp_deg + angle_diff / 2)
+
+        # 3. המרה למערכת הציור
+        chart_angle = convert_to_chart_angle(center_deg, ascendant_degree)
+        angle_rad = np.deg2rad(chart_angle)
+
+        # חישוב מיקום ה-X, Y למספר הבית
         x_text = text_radius * np.cos(angle_rad)
         y_text = text_radius * np.sin(angle_rad)
 
+        # 🚨 הדפסת מספר הבית במיקום המרכזי ללא מסגרת (bbox)
         ax.text(x_text, y_text, str(house_num),
-                fontsize=10, ha='center', va='center',
-                color='#000000', fontweight='bold', zorder=21,
-                bbox=dict(boxstyle='circle,pad=0.12', facecolor='white',
-                          edgecolor='#000000', linewidth=1.2, alpha=0.95))
-
-    print(f"✅ {len(houses_data)} קווי בתים צוירו בהצלחה")
+                fontsize=12, ha='center', va='center',
+                color='#000000', fontweight='bold', zorder=22)  # Zorder גבוה
+        # ✅ הסרת ה-bbox:
+        # bbox=dict(boxstyle='circle,pad=0.12', facecolor='white',
+        #           edgecolor='#000000', linewidth=1.2, alpha=0.95))
 
 
 def avoid_planet_overlap(planets_data, min_separation=8):
@@ -225,32 +298,12 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
     :param output_path: הנתיב המלא לשמירת קובץ התמונה
     """
     try:
-        # ============ DEBUG: בדיקה מה יש ב-chart_data ============
-        print("\n🔍 DEBUG - תוכן chart_data:")
-        print(f"Keys ברמה ראשונה: {chart_data.keys()}")
-
         # ✅ תיקון: שימוש במפתחות הנכונים
         planets_data = chart_data.get('Planets', {})
         house_cusps = chart_data.get('HouseCusps', {})
-        aspects_list = chart_data.get('Aspects', [])
-
-        print(f"\n📊 Planets: {len(planets_data)} פלנטות נמצאו")
-        print(f"🏠 HouseCusps: {len(house_cusps)} יתדות נמצאו")
-        print(f"🔗 Aspects: {len(aspects_list)} אספקטים נמצאו")
-
-        if planets_data:
-            print(f"דוגמה לפלנטה: {list(planets_data.keys())[0]} = {planets_data[list(planets_data.keys())[0]]}")
-
-        print("\n" + "=" * 50 + "\n")
-        # ============ END DEBUG ============
-
         user_name = user_obj.name
         birthdate = user_obj.birthdate
         birthtime = user_obj.birthtime if user_obj.birthtime else "לא ידוע"
-
-        # חילוץ מעלת האופק - DEBUG
-        print(f"🔍 סוג house_cusps: {type(house_cusps)}")
-        print(f"🔍 תוכן house_cusps: {house_cusps}")
 
         ascendant_degree = None
 
@@ -287,8 +340,6 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
             print(f"   house_cusps content: {house_cusps}")
             return
 
-        print(f"🎯 מעלת האופק: {ascendant_degree:.2f}°")
-
         # הגדרת הגרף
         fig, ax = plt.subplots(figsize=(14, 14), facecolor='#F5F5DC')
         ax.set_aspect('equal', adjustable='box')
@@ -308,8 +359,11 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
         circle_planets = plt.Circle((0, 0), 0.75, color='#34495E', fill=False, linewidth=1.5)
         ax.add_artist(circle_planets)
 
-        # טבעת פנימית - אספקטים (0.5)
-        circle_inner = plt.Circle((0, 0), 0.5, color='#7F8C8D', fill=False, linewidth=1.0)
+        # ציור שנתות המעלות
+        draw_degree_marks(ax, ascendant_degree, inner_radius=0.75)
+
+        # טבעת פנימית - אספקטים (0.7)
+        circle_inner = plt.Circle((0, 0), 0.7, color='#7F8C8D', fill=False, linewidth=1.0)
         ax.add_artist(circle_inner)
 
         # מעגל מרכזי
@@ -320,9 +374,10 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
         # 2. ציור קווי בתים (Houses) - לפני המזלות!
         # =====================================
 
-        # ✅ בניית מבנה houses_data מ-HouseCusps
+        # ✅ בניית מבנה houses_data מ-HouseCusps - תיקון המפתח למספר שלם
         houses_data_formatted = {}
         if house_cusps:
+            # .... (הקוד לבדיקה וחלוקה נשאר דומה)
             if isinstance(house_cusps, dict):
                 for house_num in range(1, 13):
                     if house_num in house_cusps:
@@ -331,7 +386,8 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
                             cusp_deg = float(cusp_value[0])
                         else:
                             cusp_deg = float(cusp_value)
-                        houses_data_formatted[f'בית {house_num}'] = {'cusp_deg': cusp_deg}
+                        # שינוי המפתח למספר שלם
+                        houses_data_formatted[house_num] = {'cusp_deg': cusp_deg}
             elif isinstance(house_cusps, (list, tuple)):
                 for house_num in range(1, min(13, len(house_cusps))):
                     cusp_value = house_cusps[house_num]
@@ -339,9 +395,10 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
                         cusp_deg = float(cusp_value[0])
                     else:
                         cusp_deg = float(cusp_value)
-                    houses_data_formatted[f'בית {house_num}'] = {'cusp_deg': cusp_deg}
+                    # שינוי המפתח למספר שלם
+                    houses_data_formatted[house_num] = {'cusp_deg': cusp_deg}
 
-        draw_houses(ax, houses_data_formatted, ascendant_degree)
+        draw_houses(ax, houses_data_formatted, ascendant_degree)  # קריאה עם המבנה החדש
 
         # =====================================
         # 3. ציור קווי חלוקת המזלות וסמלים
@@ -378,7 +435,7 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
 
             # שם המזל (קטן יותר, מתחת)
             zodiac_name_fixed = fix_hebrew_text(zodiac_name)
-            ax.text(x_label * 1.08, y_label * 1.08, zodiac_name_fixed, fontsize=8,
+            ax.text(x_label * 1.08, y_label * 1.08, zodiac_name_fixed, fontsize=12,
                     ha='center', va='center', color='#34495E', zorder=3)
 
         # =====================================
@@ -388,54 +445,112 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
         # המרה לזוויות במערכת הציור
         planets_chart_angles = {}
         planets_original_lon = {}  # שמירת המעלות המקוריות לאספקטים
+        planets_list_for_overlap_check = []  # רשימה לאיסוף נתונים ולמיון לצורך ציור
+
+        # סעיף 4 - הגדרות חדשות לטקסט המעלות
+        text_radius_base = 1.05
+        text_overlap_offset = 0.03  # או 0.05, תלוי בגודל הגופן
+        occupied_text_slots = {}
 
         for name, data in planets_data.items():
-            if 'lon_deg' in data and data['lon_deg'] is not None:
+            if 'lon_deg' in data and data['lon_deg'] is not None and name not in ['אופק (AC)', 'רום שמיים (MC)']:
                 original_lon = data['lon_deg']
                 chart_angle = convert_to_chart_angle(original_lon, ascendant_degree)
                 planets_chart_angles[name] = chart_angle
                 planets_original_lon[name] = original_lon
+                # שמירת הנתונים יחד ברשימה למיון
+                planets_list_for_overlap_check.append((name, chart_angle, original_lon))
 
-        print(f"🌟 מכין {len(planets_chart_angles)} פלנטות לציור")
+        # מיון הפלנטות לפי זווית הציור המקורית (כדי לבדוק חפיפות בסדר הופעה)
+        sorted_planets_for_drawing = sorted(planets_list_for_overlap_check, key=lambda k: k[1])
 
-        adjusted_positions = avoid_planet_overlap(planets_chart_angles, min_separation=10)
+        # הגדרת הרדיוסים והמרווחים:
+        line_start_radius = 0.7
+        base_planet_radius = 0.8  # הרדיוס הקבוע החדש שלך (כדי למנוע חפיפה עם סמלי המזלות)
+        overlap_offset = 0.05  # הסטה ברדיוס במקרה של צמידות (0.8 -> 0.85 -> 0.90)
+        min_separation_angle = 3  # המרווח המינימלי במעלות לבדיקת צמידות חזקה (חפיפת סמלים)
+
+        # מעקב אחר המיקומים התפוסים {chart_angle: [used_radii]}
+        occupied_slots = {}
+        planets_positions = {}
 
         # =====================================
         # 5. ציור הפלנטות
         # =====================================
 
-        planet_radius = 0.85
-        planets_positions = {}  # לשמירת מיקומים לאספקטים
+        for planet_name, chart_angle, original_lon in sorted_planets_for_drawing:
 
-        for planet_name, planet_data in planets_data.items():
-            if 'lon_deg' not in planet_data or planet_data['lon_deg'] is None or planet_name in ['אופק (AC)', 'רום שמיים (MC)']:
-                continue
+            # --- 1. חישוב הרדיוס הדינמי לסמל הפלנטה (R) ---
+            current_radius = base_planet_radius
 
-            original_lon = planet_data['lon_deg']
-            chart_angle = planets_chart_angles[planet_name]
-            adjusted_chart_angle = adjusted_positions.get(planet_name, chart_angle)
+            # בדיקה מול פלנטות קיימות ב-occupied_slots (סמלים)
+            for occupied_angle, used_radii in occupied_slots.items():
+                diff = abs(chart_angle - occupied_angle)
+                # נרמול מעגלי
+                if diff > 180:
+                    diff = 360 - diff
 
-            angle_rad = np.deg2rad(adjusted_chart_angle)
+                # אם יש חפיפת זוויות בטווח המינימלי (3 מעלות)
+                if diff < min_separation_angle:
+                    # מזיזים את הפלנטה למגש הרדיוס הפנוי הבא (0.8 -> 0.85 -> 0.90 וכו')
+                    current_radius = base_planet_radius + len(used_radii) * overlap_offset
+                    break
 
-            x = planet_radius * np.cos(angle_rad)
-            y = planet_radius * np.sin(angle_rad)
+            # עדכון המיקום התפוס לסמלי הפלנטות
+            occupied_slots.setdefault(chart_angle, []).append(current_radius)
+
+            # --- 2. חישוב הרדיוס הדינמי לטקסט המעלות (R_Text) ---
+            current_text_radius = text_radius_base
+
+            # בדיקה מול פלנטות קיימות ב-occupied_text_slots (טקסט)
+            for occupied_angle, used_radii in occupied_text_slots.items():
+                diff = abs(chart_angle - occupied_angle)
+                if diff > 180:
+                    diff = 360 - diff
+
+                if diff < min_separation_angle:
+                    # מזיזים את הטקסט לרדיוס הפנוי הבא החוצה (1.05 -> 1.08 -> 1.11 וכו')
+                    current_text_radius = text_radius_base + len(used_radii) * text_overlap_offset
+                    break
+
+            # עדכון המיקום התפוס לטקסט המעלות
+            occupied_text_slots.setdefault(chart_angle, []).append(current_text_radius)
+
+            # --- 3. ציור הפלנטה ---
+
+            # עדכון רדיוס סיום הקו הרדיאלי
+            current_line_end_radius = current_radius - 0.025
+
+            # חישוב מיקום XY של סמל הפלנטה (לפי הרדיוס המותאם current_radius)
+            angle_rad = np.deg2rad(chart_angle)
+
+            x = current_radius * np.cos(angle_rad)
+            y = current_radius * np.sin(angle_rad)
 
             symbol = PLANET_SYMBOLS.get(planet_name, planet_name[:2])
 
-            # ציור סמל הפלנטה
-            ax.text(x, y, symbol, fontsize=16, ha='center', va='center',
-                    color='#E74C3C', fontweight='bold', zorder=15,
-                    family='DejaVu Sans',
-                    bbox=dict(boxstyle='circle,pad=0.2', facecolor='white',
-                              edgecolor='#E74C3C', linewidth=1.5))
+            # 5א. ציור הקו הרדיאלי האדום
+            x_start_line = line_start_radius * np.cos(angle_rad)
+            y_start_line = line_start_radius * np.sin(angle_rad)
+            x_end_line = current_line_end_radius * np.cos(angle_rad)
+            y_end_line = current_line_end_radius * np.sin(angle_rad)
 
-            # מעלות המזל
+            # ציור הקו האדום (מציג את המיקום המדויק)
+            ax.plot([x_start_line, x_end_line], [y_start_line, y_end_line],
+                    color='#FF0000', linewidth=0.5, alpha=0.8, zorder=12, solid_capstyle='butt')
+
+            # 5ב. ציור סמל הפלנטה
+            ax.text(x, y, symbol, fontsize=20, ha='center', va='center',
+                    color='#E74C3C',
+                    fontweight='bold', zorder=15,
+                    family='DejaVu Sans'
+                    )
+
+            # 5ג. ציור טקסט המעלות (משתמש ב-current_text_radius)
             sign_deg = original_lon % 30
-            sign_name = ZODIAC_NAMES.get((original_lon // 30) * 30, '')
-            degree_text = f"{sign_deg:.0f}°"
+            degree_text = f"{sign_deg:.1f}°"
 
-            # טקסט מעלות (קצת יותר רחוק)
-            text_radius_deg = 1.05
+            text_radius_deg = current_text_radius
             x_deg = text_radius_deg * np.cos(angle_rad)
             y_deg = text_radius_deg * np.sin(angle_rad)
 
@@ -444,10 +559,8 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
                     bbox=dict(boxstyle='round,pad=0.3', facecolor='#ECF0F1',
                               edgecolor='none', alpha=0.8))
 
-            # שמירת מיקום לאספקטים (עם המעלה המקורית)
+            # שמירת מיקום לאספקטים - המיקום ששימש לציור הסמל (R מותאם)
             planets_positions[planet_name] = (x, y, original_lon)
-
-        print(f"✅ {len(planets_positions)} פלנטות צוירו בהצלחה")
 
         # =====================================
         # 6. ציור אספקטים
@@ -459,20 +572,20 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
         # 7. מקרא (Legend)
         # =====================================
 
-        legend_lines = [
-            "אספקטים:",
-            "● צמידות )0°( - אדום",
-            "● ניגוד )180°( - כחול",
-            "● משולש )120°( - ירוק",
-            "● ריבוע )90°( - כתום",
-            "● משושה )60°( - סגול"
+        legend_lines_corrected = [
+            fix_hebrew_text("אספקטים"),
+            "● " + fix_hebrew_text("אדום") + " - (0°) " + fix_hebrew_text("צמידות"),
+            "● " + fix_hebrew_text("כחול") + " - (180°) " + fix_hebrew_text("ניגוד"),
+            "● " + fix_hebrew_text("ירוק") + " - (120°) " + fix_hebrew_text("משולש"),
+            "● " + fix_hebrew_text("כתום") + " - (90°) " + fix_hebrew_text("ריבוע"),
+            "● " + fix_hebrew_text("סגול") + " - (60°) " + fix_hebrew_text("משושה")
         ]
 
-        legend_text = "\n".join([fix_hebrew_text(line) for line in legend_lines])
+        legend_text = "\n".join(legend_lines_corrected)
 
-        ax.text(-1.25, -1.15, legend_text, fontsize=9, ha='left', va='top',
+        ax.text(-1.25, -1.15, legend_text, fontsize=18, ha='left', va='top',
                 color='#2C3E50',
-                bbox=dict(boxstyle='round,pad=0.5', facecolor='white',
+                bbox=dict(boxstyle='round,pad=0.8', facecolor='white',
                           edgecolor='#2C3E50', linewidth=1, alpha=0.9))
 
         # =====================================
@@ -480,11 +593,14 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
         # =====================================
 
         title_text = fix_hebrew_text(f"מפת לידה - {user_name}")
-        subtitle_text = fix_hebrew_text(f"תאריך לידה: {birthdate} | שעה: {birthtime}")
-
+        # Reverse only the Hebrew labels, keeping the numbers (date/time) in LTR order.
+        subtitle_text = (
+                f" {birthtime} " + fix_hebrew_text("| שעה:") +
+                f" {birthdate} " + fix_hebrew_text("תאריך לידה:")
+        )
         plt.text(0, 1.22, title_text, fontsize=18, ha='center',
                  fontweight='bold', color='#2C3E50')
-        plt.text(0, 1.15, subtitle_text, fontsize=11, ha='center',
+        plt.text(0, 1.15, subtitle_text, fontsize=13, ha='center',
                  color='#34495E')
 
         # =====================================
@@ -494,7 +610,7 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
         plt.savefig(output_path, bbox_inches='tight', dpi=150, facecolor='#F5F5DC')
         plt.close()
 
-        print(f"✅ מפת לידה משופרת נוצרה ונשמרה ב: {output_path}")
+        print(f"\n✅ התוצאה נשמרה בהצלחה בקובץ: {output_path}")
 
     except Exception as e:
         import traceback
