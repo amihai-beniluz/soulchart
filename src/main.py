@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 
 from birth_chart_analysis.ChartAnalysis import ChartAnalysis
-from birth_chart_analysis.ChartDrawer import draw_and_save_chart
+from birth_chart_analysis.BirthChartDrawer import draw_and_save_chart
 from birth_chart_analysis.CalculationEngine import calculate_chart_positions
 from name_analysis.NameAnalysis import NameAnalysis
 from user import User

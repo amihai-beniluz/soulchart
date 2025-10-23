@@ -1,5 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from datetime import datetime
+from .CalculationEngine import ASPECT_ORBS
+
+# TODO: הדפסת מפת מעברים
 
 # הגדרת גופן עברי
 plt.rcParams['font.family'] = 'DejaVu Sans'
@@ -43,11 +47,11 @@ PLANET_NAMES_HEB = {
 
 # צבעי אספקטים
 ASPECT_COLORS = {
-    'conjunction': '#FF0000',  # אדום - צמוד (0°)
-    'opposition': '#0000FF',  # כחול - ניגוד (180°)
-    'trine': '#00AA00',  # ירוק - תלת (120°)
-    'square': '#FF6600',  # כתום - ריבוע (90°)
-    'sextile': '#9933FF'  # סגול - שישי (60°)
+    'Conjunction': '#FF0000',  # אדום - צמוד (0°)
+    'Opposition': '#0000FF',  # כחול - ניגוד (180°)
+    'Trine': '#00AA00',  # ירוק - תלת (120°)
+    'Square': '#FF6600',  # כתום - ריבוע (90°)
+    'Sextile': '#9933FF'  # סגול - שישי (60°)
 }
 
 
@@ -73,7 +77,7 @@ def convert_to_chart_angle(astrological_degree, ascendant_degree):
     return chart_angle
 
 
-def calculate_aspect(angle1, angle2, orb=8):
+def calculate_aspect(angle1, angle2):
     """
     מחשב אספקט בין שתי זוויות
     :param angle1: זווית פלנטה 1
@@ -86,15 +90,18 @@ def calculate_aspect(angle1, angle2, orb=8):
         diff = 360 - diff
 
     aspects = [
-        (0, 'conjunction'),
-        (60, 'sextile'),
-        (90, 'square'),
-        (120, 'trine'),
-        (180, 'opposition')
+        (0, 'Conjunction'),
+        (60, 'Sextile'),
+        (90, 'Square'),
+        (120, 'Trine'),
+        (180, 'Opposition')
     ]
 
     for target_angle, aspect_type in aspects:
-        if abs(diff - target_angle) <= orb:
+        # **שינוי מרכזי: קבלת האורב הספציפי**
+        max_orb_for_aspect = ASPECT_ORBS.get(aspect_type, 0.5)  # השתמש ב-0.5 כברירת מחדל נמוכה לבטיחות
+        
+        if abs(diff - target_angle) <= max_orb_for_aspect:
             return aspect_type, diff
 
     return None, None
@@ -149,12 +156,12 @@ def draw_aspect_lines(ax, planets_positions, orb=8):
 
     for i, (planet1, (x1, y1, original_lon1)) in enumerate(planet_list):
         for planet2, (x2, y2, original_lon2) in planet_list[i + 1:]:
-            aspect_type, angle = calculate_aspect(original_lon1, original_lon2, orb)
+            aspect_type, angle = calculate_aspect(original_lon1, original_lon2)
 
             if aspect_type:
                 color = ASPECT_COLORS.get(aspect_type, '#CCCCCC')
-                linewidth = 1.5 if aspect_type in ['conjunction', 'opposition'] else 0.8
-                alpha = 0.6 if aspect_type in ['trine', 'sextile'] else 0.4
+                linewidth = 1.5 if aspect_type in ['Conjunction', 'Opposition'] else 0.8
+                alpha = 0.6 if aspect_type in ['Trine', 'Sextile'] else 0.4
 
                 # ציור קו בין הפלנטות דרך המרכז
                 inner_radius = 0.68
@@ -248,7 +255,7 @@ def draw_houses(ax, houses_data, ascendant_degree):
         y_text = text_radius * np.sin(angle_rad)
 
         # 🚨 הדפסת מספר הבית במיקום המרכזי ללא מסגרת (bbox)
-        ax.text(x_text, y_text, str(house_num),
+        ax.text(x_text, y_text, str((house_num + 11) % 12 if (house_num + 11) % 12 != 0 else 12),
                 fontsize=12, ha='center', va='center',
                 color='#000000', fontweight='bold', zorder=22)  # Zorder גבוה
         # ✅ הסרת ה-bbox:
@@ -287,6 +294,283 @@ def avoid_planet_overlap(planets_data, min_separation=8):
             adjusted[planet] = chart_angle
 
     return adjusted
+
+
+# בתוך BirthChartDrawer.py, הוסף את שתי הפונקציות הבאות:
+
+from datetime import datetime
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+# הנחה: פונקציות העזר כמו fix_hebrew_text, convert_to_chart_angle, draw_houses, calculate_aspect,
+# וכן המילונים PLANET_SYMBOLS, ZODIAC_SYMBOLS, ASPECT_COLORS מוגדרים בקובץ זה או מיובאים.
+
+
+def draw_biwheel_planets(ax, planets_data: dict, ascendant_degree: float, is_transit=False) -> dict:
+    """
+    פונקציית עזר לציור פלנטות, מתאימה רדיוס לנטאל (פנימי) או לטרנזיט (חיצוני).
+
+    מחזירה מילון עם מיקום XY, מעלה גולמית ורדיוס של כל פלנטה, לצורך ציור אספקטים.
+    """
+
+    # הגדרות רדיוסים בהתאם לנטאל (פנימי) או טרנזיט (חיצוני)
+    # נטאל (is_transit=False) יהיה עכשיו ברדיוס הקטן (0.62)
+    # טרנזיט (is_transit=True) יהיה עכשיו ברדיוס הגדול (0.8)
+    if is_transit:
+        base_planet_radius = 0.8  # רדיוס חיצוני לטרנזיט (כחול)
+        planet_color = '#0000FF'  # כחול לטרנזיט
+        text_color = '#00008B'
+        max_radius = 1.3  # מגדירים טווח רדיוס מקסימלי לטרנזיט
+    else:
+        base_planet_radius = 0.62  # רדיוס פנימי לנטאל (אדום)
+        planet_color = '#E74C3C'  # אדום לנטאל
+        text_color = '#2C3E50'
+        max_radius = 0.73  # מגדירים טווח רדיוס מקסימלי לנטאל
+
+    line_start_radius = 0.47  # נמתח מטבעת האספקטים
+    min_separation_angle = 3
+    overlap_offset = 0.05
+    planets_positions = {}
+
+    planets_list_for_overlap_check = []
+    # סינון ואיסוף רק כוכבים שיוצגו בגלגל
+    for name, data in planets_data.items():
+        if 'lon_deg' in data and data['lon_deg'] is not None and name not in ['אופק (AC)', 'רום שמיים (MC)', 'ורטקס']:
+            original_lon = data['lon_deg']
+            # המרה לזווית במערכת הציור, בהתאם ל-AC הנטאלי
+            chart_angle = convert_to_chart_angle(original_lon, ascendant_degree)
+            planets_list_for_overlap_check.append((name, chart_angle, original_lon))
+
+    # מיון לפי זווית כדי לטפל בחפיפה
+    sorted_planets_for_drawing = sorted(planets_list_for_overlap_check, key=lambda k: k[1])
+    occupied_slots = {}
+
+    for planet_name, chart_angle, original_lon in sorted_planets_for_drawing:
+
+        # התאמת רדיוס למניעת חפיפה
+        current_radius = base_planet_radius
+        for occupied_angle, used_radius in occupied_slots.items():
+            diff = abs(chart_angle - occupied_angle)
+            if diff > 180: diff = 360 - diff
+            if diff < min_separation_angle:
+                current_radius = max(current_radius, used_radius + overlap_offset)
+                max_radius = 1.3 if is_transit else 0.73
+                if current_radius > max_radius: break
+
+        occupied_slots[chart_angle] = current_radius
+        current_text_radius = current_radius + 0.1
+
+        angle_rad = np.deg2rad(chart_angle)
+
+        # ציור קו רדיאלי
+        current_line_end_radius = current_radius - 0.025
+        x_start_line = line_start_radius * np.cos(angle_rad)
+        y_start_line = line_start_radius * np.sin(angle_rad)
+        x_end_line = current_line_end_radius * np.cos(angle_rad)
+        y_end_line = current_line_end_radius * np.sin(angle_rad)
+
+        ax.plot([x_start_line, x_end_line], [y_start_line, y_end_line],
+                color=planet_color, linewidth=0.5, alpha=0.8, zorder=12, solid_capstyle='butt')
+
+        # ציור סמל הפלנטה
+        angle_rad = np.deg2rad(chart_angle)
+        x = current_radius * np.cos(angle_rad)
+        y = current_radius * np.sin(angle_rad)
+        symbol = PLANET_SYMBOLS.get(planet_name, planet_name[:2])
+
+        ax.text(x, y, fix_hebrew_text(symbol), fontsize=20, ha='center', va='center',
+                color=planet_color, fontweight='bold', zorder=15, family='DejaVu Sans')
+
+        # 2. ציור טקסט המעלות
+        sign_deg = original_lon % 30
+        degree_text = f"{sign_deg:.1f}°"
+        x_deg = current_text_radius * np.cos(angle_rad)
+        y_deg = current_text_radius * np.sin(angle_rad)
+
+        ax.text(x_deg, y_deg, degree_text, fontsize=8,
+                ha='center', va='center', color=text_color, zorder=14,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='#ECF0F1',
+                          edgecolor='none', alpha=0.8))
+
+        # שמירת המיקום המנורמל והרדיוס לחיבורי האספקטים
+        planets_positions[planet_name] = (x, y, original_lon, current_radius)
+
+    return planets_positions
+
+
+def draw_and_save_biwheel_chart(natal_chart_data: dict, transit_chart_data: dict, user_obj, current_datetime: datetime,
+                                output_path: str):
+    """
+    מצייר מפת מעברים (Bi-Wheel), כאשר הנטאל בפנים (אדום) והמעברים בחוץ (כחול).
+    """
+    try:
+        # חילוץ נתונים
+        natal_planets = natal_chart_data.get('Planets', {})
+        natal_house_cusps = natal_chart_data.get('HouseCusps', [])
+        transit_planets = transit_chart_data.get('Planets', {})
+
+        # =========================================================================
+        # לוגיקת מציאת מעלת האופק הנטאלי (AC) והבתים
+        # =========================================================================
+        ascendant_degree = None
+
+        # 1. חילוץ AC מתוך רשימת קווי היתד (אינדקס 1)
+        if isinstance(natal_house_cusps, (list, tuple)) and len(natal_house_cusps) == 13:
+            ascendant_degree = float(natal_house_cusps[1])
+
+        # 2. גיבוי: חילוץ AC מנתוני הפלנטות
+        if ascendant_degree is None and 'אופק (AC)' in natal_planets and 'lon_deg' in natal_planets['אופק (AC)']:
+            ascendant_degree = natal_planets['אופק (AC)']['lon_deg']
+
+        if ascendant_degree is None:
+            print("❌ שגיאה: לא נמצאה מעלת האופק הנטאלי!")
+            return
+
+        # 3. עיצוב נתוני הבתים לציור
+        houses_data_formatted = {}
+        if isinstance(natal_house_cusps, (list, tuple)) and len(natal_house_cusps) == 13:
+            for house_num in range(1, 13):
+                cusp_deg = float(natal_house_cusps[house_num])
+                houses_data_formatted[house_num] = {'cusp_deg': cusp_deg}
+
+        # =========================================================================
+        # הגדרת הגרף
+        # =========================================================================
+        fig, ax = plt.subplots(figsize=(18, 18), facecolor='#F5F5DC')
+        ax.set_aspect('equal', adjustable='box')
+        ax.set_xlim(-1.4, 1.4)
+        ax.set_ylim(-1.4, 1.4)
+        ax.axis('off')
+
+        # =====================================
+        # 1. ציור הטבעות המרכזיות
+        # =====================================
+
+        # טבעת חיצונית - מזלות (1.0)
+        circle_outer = plt.Circle((0, 0), 1.0, color='#2C3E50', fill=False, linewidth=2.5)
+        ax.add_artist(circle_outer)
+
+        # טבעת פלנטות פנימית (נטאל) - 0.75
+        circle_planets_natal = plt.Circle((0, 0), 0.75, color='#0000FF', fill=False, linewidth=1.5)
+        ax.add_artist(circle_planets_natal)
+
+        # ציור שנתות המעלות
+        draw_degree_marks(ax, ascendant_degree, inner_radius=0.5)
+
+        # טבעת אספקטים (0.5)
+        circle_inner = plt.Circle((0, 0), 0.5, color='#E74C3C', fill=False, linewidth=1.5)
+        ax.add_artist(circle_inner)
+
+        # טבעת פנימית - אספקטים (0.47)
+        circle_inner = plt.Circle((0, 0), 0.47, color='#7F8C8D', fill=False, linewidth=1.0)
+        ax.add_artist(circle_inner)
+
+        # מעגל מרכזי
+        circle_center = plt.Circle((0, 0), 0.05, color='#2C3E50', fill=True)
+        ax.add_artist(circle_center)
+
+        # =====================================
+        # 2. ציור קווי בתים והמזלות
+        # =====================================
+
+        # ציור הבתים
+        draw_houses(ax, houses_data_formatted, ascendant_degree)
+
+        # ציור קווי חלוקת המזלות וסמלים
+        for zodiac_start_deg in range(0, 360, 30):
+            chart_angle = convert_to_chart_angle(zodiac_start_deg, ascendant_degree)
+            angle_rad = np.deg2rad(chart_angle)
+
+            # קו חלוקה
+            x_inner = 0.5 * np.cos(angle_rad)
+            y_inner = 0.5 * np.sin(angle_rad)
+            x_outer = 1.0 * np.cos(angle_rad)
+            y_outer = 1.0 * np.sin(angle_rad)
+
+            ax.plot([x_inner, x_outer], [y_inner, y_outer],
+                    color='#95A5A6', linewidth=1.5, zorder=2, alpha=0.7)
+
+            # סמל המזל
+            text_chart_angle = convert_to_chart_angle(zodiac_start_deg + 15, ascendant_degree)
+            text_angle_rad = np.deg2rad(text_chart_angle)
+            text_radius = 0.84
+            x_label = text_radius * np.cos(text_angle_rad)
+            y_label = text_radius * np.sin(text_angle_rad)
+
+            symbol = ZODIAC_SYMBOLS.get(zodiac_start_deg, '')
+            zodiac_name = ZODIAC_NAMES.get(zodiac_start_deg, '')
+
+            ax.text(x_label, y_label, symbol, fontsize=22, ha='center', va='center',
+                    color='#2C3E50', fontweight='bold', zorder=3, family='DejaVu Sans')
+
+            zodiac_name_fixed = fix_hebrew_text(zodiac_name)
+            ax.text(x_label * 1.1, y_label * 1.1, zodiac_name_fixed, fontsize=12,
+                    ha='center', va='center', color='#34495E', zorder=3)
+
+        # =====================================
+        # 3. ציור פלנטות הנטאל (פנימי, אדום)
+        # =====================================
+        natal_positions = draw_biwheel_planets(ax, natal_planets, ascendant_degree, is_transit=False)
+
+        # =====================================
+        # 4. ציור פלנטות המעברים (חיצוני, כחול)
+        # =====================================
+        transit_positions = draw_biwheel_planets(ax, transit_planets, ascendant_degree, is_transit=True)
+
+        # =====================================
+        # 5. ציור אספקטים (נטאל-טרנזיט)
+        # =====================================
+        inner_radius_aspect = 0.45
+
+        for natal_planet, (nx, ny, n_lon, n_rad) in natal_positions.items():
+            for transit_planet, (tx, ty, t_lon, t_rad) in transit_positions.items():
+                aspect_type, angle = calculate_aspect(n_lon, t_lon)
+
+                if aspect_type:
+                    color = ASPECT_COLORS.get(aspect_type, '#CCCCCC')
+                    linewidth = 2.0 if aspect_type in ['Conjunction', 'Opposition'] else 1.0
+                    alpha = 0.6 if aspect_type in ['Trine', 'Sextile'] else 0.4
+
+                    n_center_x = nx * (inner_radius_aspect / n_rad)
+                    n_center_y = ny * (inner_radius_aspect / n_rad)
+                    t_center_x = tx * (inner_radius_aspect / t_rad)
+                    t_center_y = ty * (inner_radius_aspect / t_rad)
+
+                    ax.plot([n_center_x, t_center_x], [n_center_y, t_center_y],
+                            color=color, linewidth=linewidth, alpha=alpha, zorder=1)
+
+        # =====================================
+        # 6. כותרת ופרטים
+        # =====================================
+        user_name = user_obj.name
+        birthdate = user_obj.birthdate
+        natal_time_str = user_obj.birthtime.strftime('%H:%M') if user_obj.birthtime else "לא ידוע"
+        transit_date = current_datetime.strftime('%Y-%m-%d')
+        transit_time = current_datetime.strftime('%H:%M')
+
+        title_text = fix_hebrew_text(f"מפת מעברים")
+        natal_details = (f" {natal_time_str} " + fix_hebrew_text("| שעת לידה:") +
+                         f" {birthdate} " + fix_hebrew_text("תאריך לידה:"))
+        transit_details = (f" {transit_time} " + fix_hebrew_text("| שעת מעבר:") +
+                           f" {transit_date} " + fix_hebrew_text("תאריך מעבר:"))
+
+        plt.text(0, 1.45, title_text, fontsize=25, ha='center', fontweight='bold', color='#2C3E50')
+        plt.text(0, 1.38, natal_details, fontsize=18, ha='center', color='#E74C3C')
+        plt.text(0, 1.30, transit_details, fontsize=18, ha='center', color='#0000FF')
+
+        # =====================================
+        # 7. שמירת התמונה
+        # =====================================
+        plt.savefig(output_path, bbox_inches='tight', dpi=150, facecolor='#F5F5DC')
+        plt.close()
+
+        print(f"\n✅ מפת המעברים נשמרה בהצלחה בקובץ: {output_path}")
+
+    except Exception as e:
+        import traceback
+        print(f"❌ אירעה שגיאה בציור מפת המעברים: {e}")
+        traceback.print_exc()
 
 
 def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
