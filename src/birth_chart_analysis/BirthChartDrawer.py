@@ -1,9 +1,8 @@
-import matplotlib.pyplot as plt
-import numpy as np
-from datetime import datetime
 from .CalculationEngine import ASPECT_ORBS
 
-# TODO: הדפסת מפת מעברים
+from datetime import datetime
+import matplotlib.pyplot as plt
+import numpy as np
 
 # הגדרת גופן עברי
 plt.rcParams['font.family'] = 'DejaVu Sans'
@@ -82,7 +81,6 @@ def calculate_aspect(angle1, angle2):
     מחשב אספקט בין שתי זוויות
     :param angle1: זווית פלנטה 1
     :param angle2: זווית פלנטה 2
-    :param orb: טווח סטייה מותר במעלות (ברירת מחדל: 8°)
     :return: (aspect_type, exact_angle) או (None, None)
     """
     diff = abs(normalize_angle(angle1 - angle2))
@@ -100,7 +98,7 @@ def calculate_aspect(angle1, angle2):
     for target_angle, aspect_type in aspects:
         # **שינוי מרכזי: קבלת האורב הספציפי**
         max_orb_for_aspect = ASPECT_ORBS.get(aspect_type, 0.5)  # השתמש ב-0.5 כברירת מחדל נמוכה לבטיחות
-        
+
         if abs(diff - target_angle) <= max_orb_for_aspect:
             return aspect_type, diff
 
@@ -145,12 +143,11 @@ def draw_degree_marks(ax, ascendant_degree, inner_radius=0.75):
                 color='#34495E', linewidth=linewidth, zorder=5, solid_capstyle='butt')
 
 
-def draw_aspect_lines(ax, planets_positions, orb=8):
+def draw_aspect_lines(ax, planets_positions):
     """
     מצייר קווי אספקטים בין פלנטות
     :param ax: ציר matplotlib
     :param planets_positions: מילון {planet_name: (x, y, original_lon)}
-    :param orb: טווח סטייה מותר
     """
     planet_list = list(planets_positions.items())
 
@@ -296,13 +293,6 @@ def avoid_planet_overlap(planets_data, min_separation=8):
     return adjusted
 
 
-# בתוך BirthChartDrawer.py, הוסף את שתי הפונקציות הבאות:
-
-from datetime import datetime
-import matplotlib.pyplot as plt
-import numpy as np
-
-
 # הנחה: פונקציות העזר כמו fix_hebrew_text, convert_to_chart_angle, draw_houses, calculate_aspect,
 # וכן המילונים PLANET_SYMBOLS, ZODIAC_SYMBOLS, ASPECT_COLORS מוגדרים בקובץ זה או מיובאים.
 
@@ -321,12 +311,10 @@ def draw_biwheel_planets(ax, planets_data: dict, ascendant_degree: float, is_tra
         base_planet_radius = 0.8  # רדיוס חיצוני לטרנזיט (כחול)
         planet_color = '#0000FF'  # כחול לטרנזיט
         text_color = '#00008B'
-        max_radius = 1.3  # מגדירים טווח רדיוס מקסימלי לטרנזיט
     else:
         base_planet_radius = 0.62  # רדיוס פנימי לנטאל (אדום)
         planet_color = '#E74C3C'  # אדום לנטאל
         text_color = '#2C3E50'
-        max_radius = 0.73  # מגדירים טווח רדיוס מקסימלי לנטאל
 
     line_start_radius = 0.47  # נמתח מטבעת האספקטים
     min_separation_angle = 3
@@ -352,11 +340,13 @@ def draw_biwheel_planets(ax, planets_data: dict, ascendant_degree: float, is_tra
         current_radius = base_planet_radius
         for occupied_angle, used_radius in occupied_slots.items():
             diff = abs(chart_angle - occupied_angle)
-            if diff > 180: diff = 360 - diff
+            if diff > 180:
+                diff = 360 - diff
             if diff < min_separation_angle:
                 current_radius = max(current_radius, used_radius + overlap_offset)
                 max_radius = 1.3 if is_transit else 0.73
-                if current_radius > max_radius: break
+                if current_radius > max_radius:
+                    break
 
         occupied_slots[chart_angle] = current_radius
         current_text_radius = current_radius + 0.1
@@ -383,8 +373,9 @@ def draw_biwheel_planets(ax, planets_data: dict, ascendant_degree: float, is_tra
                 color=planet_color, fontweight='bold', zorder=15, family='DejaVu Sans')
 
         # 2. ציור טקסט המעלות
-        sign_deg = original_lon % 30
-        degree_text = f"{sign_deg:.1f}°"
+        degree = int(original_lon) % 30
+        minute = int((original_lon % 1) * 60)
+        degree_text = f"{degree:02d}°{minute:02d}'"
         x_deg = current_text_radius * np.cos(angle_rad)
         y_deg = current_text_radius * np.sin(angle_rad)
 
@@ -549,7 +540,7 @@ def draw_and_save_biwheel_chart(natal_chart_data: dict, transit_chart_data: dict
         transit_date = current_datetime.strftime('%Y-%m-%d')
         transit_time = current_datetime.strftime('%H:%M')
 
-        title_text = fix_hebrew_text(f"מפת מעברים")
+        title_text = fix_hebrew_text(f"מפת מעברים - {user_name}")
         natal_details = (f" {natal_time_str} " + fix_hebrew_text("| שעת לידה:") +
                          f" {birthdate} " + fix_hebrew_text("תאריך לידה:"))
         transit_details = (f" {transit_time} " + fix_hebrew_text("| שעת מעבר:") +
@@ -831,8 +822,9 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
                     )
 
             # 5ג. ציור טקסט המעלות (משתמש ב-current_text_radius)
-            sign_deg = original_lon % 30
-            degree_text = f"{sign_deg:.1f}°"
+            degree = int(original_lon) % 30
+            minute = int((original_lon % 1) * 60)
+            degree_text = f"{degree:02d}°{minute:02d}'"
 
             text_radius_deg = current_text_radius
             x_deg = text_radius_deg * np.cos(angle_rad)
@@ -850,7 +842,7 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
         # 6. ציור אספקטים
         # =====================================
 
-        draw_aspect_lines(ax, planets_positions, orb=8)
+        draw_aspect_lines(ax, planets_positions)
 
         # =====================================
         # 7. מקרא (Legend)

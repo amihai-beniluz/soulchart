@@ -164,7 +164,7 @@ class ChartAnalysis:
                 # חישוב מעלה ודקה
                 lon_deg = pos['lon_deg']
                 degree = math.floor(lon_deg) % 30
-                minute = int((lon_deg * 60) % 60)
+                minute = int((lon_deg % 1) * 60)
 
                 sign_heb = pos['sign']
                 retro_str = " (R)" if pos.get('is_retrograde') else ""
@@ -197,8 +197,6 @@ class ChartAnalysis:
         for aspect in aspects_list:
             p1_heb = aspect['planet1']
             p2_heb = aspect['planet2']
-
-            # תרגום שם ההיבט לעברית
             aspect_heb = self.ASPECTS_DICT_HEB.get(aspect['aspect_name_eng'], aspect['aspect_name_eng'])
             orb = aspect['orb']
 
@@ -206,7 +204,24 @@ class ChartAnalysis:
             p1_type_str = f" ({'לידה' if aspect.get('p1_type') == 'natal' else 'מעבר'})"
             p2_type_str = f" ({'מעבר' if aspect.get('p2_type') == 'transit' else 'לידה'})"
 
-            report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str} | אורב: {orb:.2f}°")
+            is_transit_aspect = (aspect.get('p1_type') != aspect.get('p2_type'))
+
+            if is_transit_aspect:
+                progress_indicator = self._calculate_transit_progress(aspect)
+                max_orb_value = aspect.get('max_orb', 0.5)
+
+                # עיצוב הפלט בהתאם לבקשה
+                if progress_indicator == "not supported yet. coming soon!":
+                    line_suffix = f" | {progress_indicator}"
+                else:
+                    line_suffix = f" | התקדמות: {progress_indicator}"
+
+                report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str}{line_suffix}")
+                # הוספת פירוט האורב בשורה נפרדת
+                report.append(f"    - אורב נוכחי: {orb:.2f}° (מתוך: {max_orb_value:.2f}°)")
+            else:
+                # היבט נטאל-נטאל - הפורמט הישן
+                report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str} | אורב: {orb:.2f}°")
 
             if is_interpreted:
                 p1_eng = self.PLANET_NAMES_ENG[p1_heb]
@@ -555,3 +570,40 @@ class ChartAnalysis:
                 report.append("-" * 80)
 
         return report
+
+    def _calculate_transit_progress(self, aspect: dict) -> str:
+        """
+        מחשב את מחוון ההתקדמות הלינארי של היבט מעבר בתוך האורב.
+        """
+        import math
+
+        p2_is_retrograde = aspect.get('p2_is_retrograde', False)
+
+        # 1. טיפול במקרה של נסיגה
+        if p2_is_retrograde:
+            return "not supported yet. coming soon!"
+
+        # 2. חישוב נתונים
+        current_orb = aspect['orb']
+        max_orb = aspect.get('max_orb', 0.5)
+        is_approaching = aspect.get('is_approaching', True)
+
+        if max_orb <= 0.001:
+            return "[██████████] 100.0% (מדויק)"
+
+        # 3. קביעת אחוז ההצגה והכיוון
+        if is_approaching:
+            status_text = "מתחזק"
+            # כשמתקרב: אורב קטן = אחוז גבוה
+            percent = ((max_orb - current_orb) / max_orb) * 100
+        else:
+            status_text = "נחלש"
+            # כשמתרחק: אורב גדול = אחוז נמוך
+            percent = ((max_orb - current_orb) / max_orb) * 100
+
+        # 4. בניית המחוון (10 תווים)
+        percent = max(0.0, min(100.0, percent))
+        num_blocks = math.floor(percent / 10)
+        progress_bar = "█" * num_blocks + "░" * (10 - num_blocks)
+
+        return f"[{progress_bar}] {percent:.1f}% ({status_text})"

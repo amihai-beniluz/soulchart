@@ -371,13 +371,15 @@ def calculate_current_positions(dt_object: datetime, lat: float, lon: float) -> 
             'lon_deg': lon_deg,
             'sign': planet_sign,
             'house': None,  # נשאר None
-            'is_retrograde': is_retrograde
+            'is_retrograde': is_retrograde,
+            'speed': speed,  # ✅ השם המקורי
+            'lon_speed_deg_per_day': speed  # ✅ גם השם החדש לתאימות
         }
 
     return chart_data
 
 
-def calculate_transit_aspects(natal_planets: dict, transit_planets: dict) -> list:
+def calculate_transit_aspects(natal_planets: dict, transit_planets: dict) -> list[dict]:
     """
     מחשב את ההיבטים (Bi-wheel) בין כוכבי מפת הלידה לכוכבי המעבר.
 
@@ -399,31 +401,42 @@ def calculate_transit_aspects(natal_planets: dict, transit_planets: dict) -> lis
             if 'lon_deg' not in p2_data or p2_data['lon_deg'] is None:
                 continue
 
-            # היבטי טרנזיט נבדקים בין כל כוכב נטאל לכל כוכב טרנזיט (Bi-wheel)
-            # לצורך הדיוק, אנו משווים גם כוכב נטאל לכוכב טרנזיט בעל אותו שם (לדוגמה: מאדים נטאל מול מאדים טרנזיט).
-
             p2_lon = ensure_float(p2_data['lon_deg'])
 
-            # 1. חישוב המרחק הזוויתי הקצר ביותר
+            # 3. חישוב המרחק הזוויתי הקצר ביותר
             separation = math.fabs(p1_lon - p2_lon)
             separation = min(separation, 360.0 - separation)
 
-            # 2. בדיקה מול כל זוויות ההיבט
+            # 4. בדיקה מול כל זוויות ההיבט
             for angle, aspect_name_eng in ASPECTS_DICT.items():
-                difference = math.fabs(separation - angle)
+                difference = math.fabs(separation - angle)  # האורב הנוכחי
+                orb_max = ASPECT_ORBS.get(aspect_name_eng, 0.5)
 
-                # אם ההפרש קטן מהאורב המקסימלי
-                orb = ASPECT_ORBS.get(aspect_name_eng, 0.5)
-                if difference <= orb:
+                if difference <= orb_max:
+                    # חישוב האם ההיבט מתקרב או מתרחק
+                    p2_speed = p2_data.get('lon_speed_deg_per_day', p2_data.get('speed', 0.0))
+
+                    # לוגיקה פשוטה: אם האורב גדול ממחצית האורב המקסימלי = מתקרב
+                    # אם האורב קטן ממחצית האורב המקסימלי = מתרחק (עבר את ה-Exact)
+                    if difference > (orb_max / 2):
+                        is_approaching = True  # עדיין רחוק, מתקרב ל-Exact
+                    else:
+                        is_approaching = False  # קרוב מדי, כנראה עבר את ה-Exact ומתרחק
+
+                    # הוספת האספקט לרשימה
                     aspects_list.append({
                         'planet1': p1_name_heb,
                         'planet2': p2_name_heb,
-                        'p1_type': 'natal',  # הוספה לדיווח
-                        'p2_type': 'transit',  # הוספה לדיווח
-                        'aspect_name_heb': aspect_name_eng,  # שימוש ב-ENG כבסיס
+                        'p1_type': 'natal',
+                        'p2_type': 'transit',
                         'aspect_name_eng': aspect_name_eng,
-                        'orb': difference
+                        'angle_diff': separation,
+                        'exact_angle': angle,
+                        'orb': difference,
+                        'max_orb': orb_max,
+                        'p2_is_retrograde': p2_data.get('is_retrograde', False),
+                        'p2_speed': p2_data.get('lon_speed_deg_per_day', 0.0),
+                        'is_approaching': is_approaching
                     })
 
-    aspects_list.sort(key=lambda x: x['orb'])
     return aspects_list
