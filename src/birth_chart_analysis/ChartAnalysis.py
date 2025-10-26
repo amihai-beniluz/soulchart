@@ -2,7 +2,8 @@ from datetime import datetime
 import traceback
 import math
 
-from .CalculationEngine import calculate_chart_positions, ZODIAC_SIGNS, ENG_ZODIAC_SIGNS, calculate_current_positions, calculate_transit_aspects
+from .CalculationEngine import calculate_chart_positions, ZODIAC_SIGNS, ENG_ZODIAC_SIGNS, calculate_current_positions, \
+    calculate_transit_aspects
 from .ChartDataLoaders import load_all_chart_data
 
 
@@ -181,7 +182,8 @@ class ChartAnalysis:
         report.append("\n")
         return report
 
-    def _format_aspects_report(self, aspects_list: list, title: str, is_interpreted = False) -> list:
+    def _format_aspects_report(self, aspects_list: list, title: str, is_interpreted=False,
+                               is_natal_only: bool = False) -> list:
         """מעצבת דוח היבטים (נטאל-נטאל או נטאל-טרנזיט)."""
         report = [
             f"\n{'=' * 80}",
@@ -200,41 +202,72 @@ class ChartAnalysis:
             aspect_heb = self.ASPECTS_DICT_HEB.get(aspect['aspect_name_eng'], aspect['aspect_name_eng'])
             orb = aspect['orb']
 
-            # הוספת סוג המפה (נטאלי/מעבר)
-            p1_type_str = f" ({'לידה' if aspect.get('p1_type') == 'natal' else 'מעבר'})"
-            p2_type_str = f" ({'מעבר' if aspect.get('p2_type') == 'transit' else 'לידה'})"
-
-            is_transit_aspect = (aspect.get('p1_type') != aspect.get('p2_type'))
-
-            if is_transit_aspect:
-                progress_indicator = self._calculate_transit_progress(aspect)
-                max_orb_value = aspect.get('max_orb', 0.5)
-
-                # עיצוב הפלט בהתאם לבקשה
-                if progress_indicator == "not supported yet. coming soon!":
-                    line_suffix = f" | {progress_indicator}"
-                else:
-                    line_suffix = f" | התקדמות: {progress_indicator}"
-
-                report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str}{line_suffix}")
-                # הוספת פירוט האורב בשורה נפרדת
-                report.append(f"    - אורב נוכחי: {orb:.2f}° (מתוך: {max_orb_value:.2f}°)")
+            if is_natal_only:
+                # פורמט נקי עבור היבטים נטאליים בלבד
+                line_text = f"{p1_heb} {aspect_heb} {p2_heb} | אורב: {orb:.2f}°"
+                report.append(line_text)
+                is_transit_aspect = False
             else:
-                # היבט נטאל-נטאל - הפורמט הישן
-                report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str} | אורב: {orb:.2f}°")
+                # לוגיקה מקורית עבור היבטי מעבר-לידה (Bi-wheel)
+                # הוספת סוג המפה (נטאלי/מעבר)
+                p1_type_str = f" ({'לידה' if aspect.get('p1_type') == 'natal' else 'מעבר'})"
+                p2_type_str = f" ({'מעבר' if aspect.get('p2_type') == 'transit' else 'לידה'})"
+
+                is_transit_aspect = (aspect.get('p1_type') != aspect.get('p2_type'))
+
+                if is_transit_aspect:
+                    progress_indicator = self._calculate_transit_progress(aspect)
+                    max_orb_value = aspect.get('max_orb', 0.5)
+
+                    # עיצוב הפלט בהתאם לבקשה
+                    if progress_indicator == "not supported yet. coming soon!":
+                        line_suffix = f" | {progress_indicator}"
+                    else:
+                        line_suffix = f" | התקדמות: {progress_indicator}"
+
+                    report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str}{line_suffix}")
+                    # הוספת פירוט האורב בשורה נפרדת
+                    report.append(f"    - אורב נוכחי: {orb:.2f}° (מתוך: {max_orb_value:.2f}°)")
+                else:
+                    # היבט נטאל-נטאל - הפורמט הישן (Fallback)
+                    report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str} | אורב: {orb:.2f}°")
 
             if is_interpreted:
-                p1_eng = self.PLANET_NAMES_ENG[p1_heb]
-                p2_eng = self.PLANET_NAMES_ENG[p2_heb]
-                aspect_name = aspect['aspect_name_eng']
+                # לוגיקת הפרשנות
+                if is_natal_only:
+                    # פרשנות נטאל-נטאל (ממאגר 'aspects')
+                    aspects_data = self.chart_data.get('aspects', {})
+                    p1_eng = self.PLANET_NAMES_ENG[p1_heb]
+                    p2_eng = self.PLANET_NAMES_ENG[p2_heb]
+                    aspect_name_eng = aspect['aspect_name_eng']
 
-                key = f"Natal {p1_eng} {aspect_name} Transit {p2_eng}"
-                aspects_data = self.chart_data.get('aspects_transit', {})
-                analysis = aspects_data.get(key)
+                    # לוגיקת שליפת מפתח מורכבת
+                    aspect_name_normalized = aspect_name_eng.replace('-', '')
+                    key_1 = f"{p1_eng} {aspect_name_normalized} {p2_eng}"
+                    key_2 = f"{p2_eng} {aspect_name_normalized} {p1_eng}"
+                    analysis = aspects_data.get(key_1)
+                    if not analysis: analysis = aspects_data.get(key_2)
+                    if not analysis and aspect_name_normalized != aspect_name_eng:
+                        key_1_dashed = f"{p1_eng} {aspect_name_eng} {p2_eng}"
+                        key_2_dashed = f"{p2_eng} {aspect_name_eng} {p1_eng}"
+                        analysis = aspects_data.get(key_1_dashed)
+                        if not analysis: analysis = aspects_data.get(key_2_dashed)
+                    if not analysis:
+                        analysis = f"❌ ניתוח היבט זה לא נמצא במאגר: {key_1} / {key_2}"
 
-                # אם לא נמצא
-                if not analysis:
-                    analysis = f"❌ ניתוח היבט זה לא נמצא במאגר: {key}"
+                elif is_transit_aspect:
+                    # פרשנות מעבר-לידה (ממאגר 'aspects_transit')
+                    p1_eng = aspect.get('p1_eng_name') or self.PLANET_NAMES_ENG[p1_heb]
+                    p2_eng = aspect.get('p2_eng_name') or self.PLANET_NAMES_ENG[p2_heb]
+                    aspect_name = aspect['aspect_name_eng']
+                    key = f"Natal {p1_eng} {aspect_name} Transit {p2_eng}"
+                    aspects_data = self.chart_data.get('aspects_transit', {})
+                    analysis = aspects_data.get(key)
+                    if not analysis:
+                        analysis = f"❌ ניתוח היבט זה לא נמצא במאגר: {key}"
+                else:
+                    analysis = "❌ לא ניתן למצוא ניתוח - סוג ההיבט לא הוגדר כראוי."
+
                 report.append(f"\n{analysis}\n")
                 if aspect != aspects_list[-1]:
                     report.append("-" * 80)
@@ -243,7 +276,7 @@ class ChartAnalysis:
         report.append("\n")
         return report
 
-    def analyze_transits_and_aspects(self, current_location: tuple, is_interpreted = False) -> list:
+    def analyze_transits_and_aspects(self, current_location: tuple, is_interpreted=False) -> list:
         """
         מבצע השוואה בין מפת הלידה (נטאלית) למיקומי הכוכבים הנוכחיים (מעבר/טרנזיט).
         """
@@ -307,7 +340,8 @@ class ChartAnalysis:
         report.extend(self._format_aspects_report(
             transit_aspects_list,
             "3. היבטים נוצרים בין כוכבי מעבר ללידה (טרנזיטים)",
-            is_interpreted
+            is_interpreted,
+            is_natal_only=False
         ))
 
         return report
@@ -333,9 +367,10 @@ class ChartAnalysis:
         analysis = data_source.get(normalized_key, default_message)
         return analysis
 
-    def analyze_chart(self, full_report: bool = True) -> list:
+    def analyze_chart(self, is_interpreted: bool = True) -> list:
         """
         מבצע חישוב וניתוח מלא של מפת הלידה ומשלב את ניתוח השליטים.
+        כאשר is_interpreted=False, הפלט יחזיר רק את מיקומי הפלנטות והיבטים ללא פרשנות טקסטואלית נרחבת.
         """
 
         # 1. ודא שיש מספיק נתונים
@@ -356,7 +391,7 @@ class ChartAnalysis:
             traceback.print_exc()
             return [f"❌ שגיאה בחישוב המפה האסטרולוגית: {e}"]
 
-        report = [f"=== ניתוח מפת לידה עבור {self.user.name} ({self.user.birthdate}) ===\n"]
+        report = [f"=== ניתוח מפת לידה עבור {self.user.name} ({self.user.birthdate}) ==="]
 
         # נתוני המפה המחושבים
         planets_data = chart_positions['Planets']
@@ -364,8 +399,33 @@ class ChartAnalysis:
         aspects_list = chart_positions['Aspects']
 
         # ----------------------------------------------------------------------
-        # השמש הירח והאופק האסטרולוגי
+        # 1. דוח מיקומי כוכבים
         # ----------------------------------------------------------------------
+        report.extend(self._format_positions_report(
+            planets_data,
+            "1. מיקומי כוכבי הלידה (נטאלי)",
+            include_house=True
+        ))
+
+        # ----------------------------------------------------------------------
+        # 2. דוח היבטים
+        # ----------------------------------------------------------------------
+        report.extend(self._format_aspects_report(
+            aspects_list,
+            "2. היבטים בין כוכבי הלידה (נטאליים)",
+            is_interpreted=is_interpreted,  # משתמש בדגל כדי לשלוט האם להדפיס פרשנות
+            is_natal_only=True  # מורה על פורמט נקי ללא סוג המפה בסוגריים
+        ))
+
+        # אם is_interpreted=False, אנו מסיימים כאן.
+        if not is_interpreted:
+            return report
+
+        # ----------------------------------------------------------------------
+        # הניתוח המלא (רק אם is_interpreted = True)
+        # ----------------------------------------------------------------------
+
+        # השמש הירח והאופק האסטרולוגי
         report.append("")
         report.append("\n" + "=" * 80)
         report.append("השמש הירח והאופק העולה")
@@ -386,9 +446,7 @@ class ChartAnalysis:
                                                            f"ניתוח {sun_moon_ascendant_title} לא נמצא.")
         report.append(f"{sun_moon_ascendant_analysis}")
 
-        # ----------------------------------------------------------------------
         # מיקומי הבתים והכוכבים במזלות
-        # ----------------------------------------------------------------------
         report.append("")
         report.append("\n" + "=" * 80)
         report.append("מיקומי הבתים והכוכבים במזלות")
@@ -399,7 +457,7 @@ class ChartAnalysis:
             cusp_degree = cusps[h]
             cusp_sign = self.get_sign_from_degree(cusp_degree)
             eng_cusp_sign = self.get_eng_sign_from_degree(cusp_degree)
-            heb_house = self.HOUSES_NAMES_HEB[h-1]
+            heb_house = self.HOUSES_NAMES_HEB[h - 1]
             ruler = self.SIGN_RULERS.get(cusp_sign)
 
             house_in_sign_key = f"{self.HOUSE_NAMES_ENG_FULL[h - 1]} in {eng_cusp_sign}"
@@ -460,17 +518,20 @@ class ChartAnalysis:
                 report.append(f"{planet_analysis}\n")
                 report.append("")
                 # planet in house
-                planet_in_house_analysis = self._fetch_analysis('planet_in_house', planet_in_house_key, f"ניתוח {planet} ב{heb_house[1:]} לא נמצא.")
+                planet_in_house_analysis = self._fetch_analysis('planet_in_house', planet_in_house_key,
+                                                                f"ניתוח {planet} ב{heb_house[1:]} לא נמצא.")
                 report.append(f"{planet} ב{heb_house[1:]}\n")
                 report.append(f"{planet_in_house_analysis}\n")
                 report.append("")
                 # planet in sign
-                planet_in_sign_analysis = self._fetch_analysis('planet_in_sign', planet_in_sign_key, f"ניתוח {planet} ב{planet_sign} לא נמצא.")
+                planet_in_sign_analysis = self._fetch_analysis('planet_in_sign', planet_in_sign_key,
+                                                               f"ניתוח {planet} ב{planet_sign} לא נמצא.")
                 report.append(f"{planet} ב{planet_sign}\n")
                 report.append(f"{planet_in_sign_analysis}\n")
                 report.append("")
                 # planet in house in sign
-                planet_house_sign_analysis = self._fetch_analysis('planet_house_sign', planet_house_sign_key, f"ניתוח {planet} ב{heb_house[1:]} ב{planet_sign}{is_inter_str}{is_retro_str} לא נמצא.")
+                planet_house_sign_analysis = self._fetch_analysis('planet_house_sign', planet_house_sign_key,
+                                                                  f"ניתוח {planet} ב{heb_house[1:]} ב{planet_sign}{is_inter_str}{is_retro_str} לא נמצא.")
                 report.append(f"{planet} ב{heb_house[1:]} ב{planet_sign}{is_inter_str}{is_retro_str}\n")
                 report.append(f"{planet_house_sign_analysis}\n")
                 report.append("")
@@ -510,7 +571,8 @@ class ChartAnalysis:
                 ruler_analysis = h2h_data.get(analysis_key,
                                               f"❌ ניתוח מפתח זה לא נמצא במאגר")
 
-                report.append(f"{heb_house} ב{cusp_sign} ושליט הבית ({ruler}) ממוקם בבית {ruler_house} ובמזל {is_intercepted_heb_str}{ruler_sign}")
+                report.append(
+                    f"{heb_house} ב{cusp_sign} ושליט הבית ({ruler}) ממוקם בבית {ruler_house} ובמזל {is_intercepted_heb_str}{ruler_sign}")
                 report.append(f"{ruler_analysis}\n")
                 # report.append("-" * 80)
 
@@ -522,55 +584,9 @@ class ChartAnalysis:
                 report.append("-" * 80 + "\n")
                 report.append("")
 
-        # ----------------------------------------------------------------------
-        # ההיבטים (הקשרים והדינמיקה)
-        # ----------------------------------------------------------------------
-        report.append("")
-        report.append("=" * 80)
-        report.append("ההיבטים (הקשרים והדינמיקה)")
-        report.append("=" * 80)
-        report.append(
-            "\nההיבטים מראים כיצד הכוחות (הכוכבים) והתחומים (הבתים) מנהלים אינטראקציה – האם הם משתפים פעולה או מתנגשים.\n")
-        report.append("")
-
-        aspects_data = self.chart_data.get('aspects', {})
-
-        for aspect in aspects_list:
-            p1 = aspect['planet1']
-            p2 = aspect['planet2']
-            aspect_name = self.ASPECTS_DICT_HEB[aspect['aspect_name_heb']]
-
-            # נרמול שם ההיבט - הסרת מקפים לצורך חיפוש
-            aspect_name_normalized = aspect['aspect_name_eng'].replace('-', '')
-
-            # בניית מפתח שליפה: "Planet1 AspectName Planet2"
-            key_1 = f"{self.PLANET_NAMES_ENG[p1]} {aspect_name_normalized} {self.PLANET_NAMES_ENG[p2]}"
-            key_2 = f"{self.PLANET_NAMES_ENG[p2]} {aspect_name_normalized} {self.PLANET_NAMES_ENG[p1]}"
-
-            # חיפוש ראשון - ללא מקפים
-            analysis = aspects_data.get(key_1)
-            if not analysis:
-                analysis = aspects_data.get(key_2)
-
-            # חיפוש שני - עם מקפים (אם המפתח המקורי שונה)
-            if not analysis and aspect_name_normalized != aspect['aspect_name_eng']:
-                key_1_dashed = f"{self.PLANET_NAMES_ENG[p1]} {aspect['aspect_name_eng']} {self.PLANET_NAMES_ENG[p2]}"
-                key_2_dashed = f"{self.PLANET_NAMES_ENG[p2]} {aspect['aspect_name_eng']} {self.PLANET_NAMES_ENG[p1]}"
-                analysis = aspects_data.get(key_1_dashed)
-                if not analysis:
-                    analysis = aspects_data.get(key_2_dashed)
-
-            # אם עדיין לא נמצא
-            if not analysis:
-                analysis = f"❌ ניתוח היבט זה לא נמצא במאגר: {key_1} / {key_2}"
-
-            report.append(f"\n{p1} {aspect_name} {p2} (orb: {aspect['orb']:.2f}°)")
-            report.append(f"\n{analysis}\n")
-            if aspect != aspects_list[-1]:
-                report.append("-" * 80)
-
         return report
 
+    # TODO: להוסיף מספר ימים שימשך ההיבט, לשכלל את החישוב, להוסיף תצוגת לוח שנה שבה מסומן כל היבט.
     def _calculate_transit_progress(self, aspect: dict) -> str:
         """
         מחשב את מחוון ההתקדמות הלינארי של היבט מעבר בתוך האורב.
@@ -591,15 +607,17 @@ class ChartAnalysis:
         if max_orb <= 0.001:
             return "[██████████] 100.0% (מדויק)"
 
-        # 3. קביעת אחוז ההצגה והכיוון
+        # 3. חישוב אחוז התקדמות לפי מחזור החיים השלם של ההיבט
         if is_approaching:
             status_text = "מתחזק"
-            # כשמתקרב: אורב קטן = אחוז גבוה
-            percent = ((max_orb - current_orb) / max_orb) * 100
+            # מתקרב: מ-10° ל-0° = מ-0% ל-50%
+            # current_orb=10 → 0%, current_orb=0 → 50%
+            percent = ((max_orb - current_orb) / max_orb) * 50
         else:
             status_text = "נחלש"
-            # כשמתרחק: אורב גדול = אחוז נמוך
-            percent = ((max_orb - current_orb) / max_orb) * 100
+            # מתרחק: מ-0° ל-10° = מ-50% ל-100%
+            # current_orb=0 → 50%, current_orb=10 → 100%
+            percent = 50 + (current_orb / max_orb) * 50
 
         # 4. בניית המחוון (10 תווים)
         percent = max(0.0, min(100.0, percent))

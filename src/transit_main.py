@@ -97,7 +97,7 @@ def main():
         )
 
         # 3. ביצוע הניתוח הטקסטואלי (הקריאה המקורית, ללא שינוי)
-        transit_result = chart_analysis.analyze_transits_and_aspects(current_location, is_interpreted=True)
+        transit_result = chart_analysis.analyze_transits_and_aspects(current_location, is_interpreted=False)
 
         # ... (שמירת הדוח הטקסטואלי)
         birth_time_str = user.birthtime.strftime('%H-%M') if user.birthtime else 'Unknown'
