@@ -2,8 +2,16 @@ from datetime import datetime
 import traceback
 import math
 
-from .CalculationEngine import calculate_chart_positions, ZODIAC_SIGNS, ENG_ZODIAC_SIGNS, calculate_current_positions, \
-    calculate_transit_aspects
+from .CalculationEngine import (
+    calculate_chart_positions,
+    ZODIAC_SIGNS,
+    ENG_ZODIAC_SIGNS,
+    calculate_current_positions,
+    calculate_transit_aspects,
+    calculate_aspect_lifecycle,
+    check_retrograde_at_date,
+    PLANET_IDS_FOR_TRANSIT
+)
 from .ChartDataLoaders import load_all_chart_data
 
 
@@ -115,32 +123,6 @@ class ChartAnalysis:
         except Exception:
             return False
 
-    def _format_positions_report(self, planets_data: dict, title: str) -> list:
-        """מחלץ ומעצב את מיקומי הכוכבים כטקסט (נטאלי או מעבר)."""
-        report = [
-            f"\n{'=' * 80}",
-            f"{title}",
-            f"{'=' * 80}"
-        ]
-
-        # הרשימה מכילה רק גופים מרכזיים
-        major_planets = [p for p in self.PLANET_NAMES_ENG.keys()
-                         if p in planets_data and p not in ['פורטונה', 'ורטקס', 'לילית', 'כירון', 'ראש דרקון']]
-
-        # הוספת נקודות רגישות מרכזיות
-        points = ['אופק (AC)', 'רום שמיים (MC)']
-
-        # כוכבים ונקודות
-        report.append("\n* מיקומי כוכבים ונקודות:")
-        for name in major_planets + points:
-            if name in planets_data:
-                pos = planets_data[name]
-                # עיצוב הפורמט: 'מאדים: 23°55' בטלה'
-                formatted_position = f"{pos['degree']:02d}°{pos['minute']:02d}' ב{pos['sign']}"
-                report.append(f"    - {name:<10}: {formatted_position}")
-
-        report.append("")
-        return report
 
     def _format_positions_report(self, planets_data: dict, title: str, include_house: bool = True) -> list:
         """מעצבת דוח מיקומי כוכבים (נטאלי או טרנזיט)."""
@@ -168,12 +150,15 @@ class ChartAnalysis:
                 minute = int((lon_deg % 1) * 60)
 
                 sign_heb = pos['sign']
+
+                # ✅ תיקון: הצג (R) גם כשאין בתים (טרנזיט)
                 retro_str = " (R)" if pos.get('is_retrograde') else ""
 
                 formatted_position = f"{degree:02d}°{minute:02d}' ב{sign_heb}{retro_str}"
 
                 line = f"    - {name:<10}: {formatted_position}"
 
+                # רק במפות נטאליות יש בתים
                 if include_house and pos.get('house') is not None:
                     line += f" (בית {pos['house']})"
 
@@ -216,18 +201,72 @@ class ChartAnalysis:
                 is_transit_aspect = (aspect.get('p1_type') != aspect.get('p2_type'))
 
                 if is_transit_aspect:
-                    progress_indicator = self._calculate_transit_progress(aspect)
                     max_orb_value = aspect.get('max_orb', 0.5)
+                    strength_indicator = self._calculate_aspect_strength(orb, max_orb_value)
 
-                    # עיצוב הפלט בהתאם לבקשה
-                    if progress_indicator == "not supported yet. coming soon!":
-                        line_suffix = f" | {progress_indicator}"
-                    else:
-                        line_suffix = f" | התקדמות: {progress_indicator}"
+                    # חישוב מחזור חיים
+                    try:
+                        natal_planets = aspect.get('natal_planets_data')
+                        p1_natal_lon = natal_planets[p1_heb]['lon_deg']
+                        transit_planet_id = PLANET_IDS_FOR_TRANSIT.get(p2_heb)
 
-                    report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str}{line_suffix}")
-                    # הוספת פירוט האורב בשורה נפרדת
+                        if transit_planet_id is not None:
+                            from datetime import datetime
+                            lifecycle = calculate_aspect_lifecycle(
+                                p1_natal_lon,
+                                transit_planet_id,
+                                aspect['exact_angle'],
+                                max_orb_value,
+                                datetime.now()
+                            )
+
+                            # ✅ עדכון: העבר את lifecycle למחוון ההתקדמות
+                            progress_indicator = self._calculate_transit_progress(aspect, lifecycle)
+
+                            lifecycle_str = (
+                                f"    - תקופת פעילות: {lifecycle['start']:%d.%m.%Y %H:%M} - "
+                                f"{lifecycle['end']:%d.%m.%Y %H:%M} ({lifecycle['total_days']} ימים"
+                            )
+
+                            # הוסף "X מעברים" אם יש יותר מ-1
+                            if lifecycle['num_passes'] > 1:
+                                lifecycle_str += f", {lifecycle['num_passes']} מעברים"
+                            lifecycle_str += ")"
+
+                            # בנה שורת Exact קומפקטית
+                            if lifecycle['exact_dates']:
+                                exact_parts = []
+                                for ex in lifecycle['exact_dates']:
+                                    retro_marker = " ⟲" if ex['is_retrograde'] else ""
+                                    exact_parts.append(f"{ex['date']:%d.%m.%Y}{retro_marker}")
+
+                                exact_str = f"    - Exact: {', '.join(exact_parts)}"
+                            else:
+                                exact_str = ""
+                        else:
+                            # ✅ fallback אם אין transit_planet_id
+                            progress_indicator = self._calculate_transit_progress(aspect)
+                            lifecycle_str = ""
+                            exact_str = ""
+                    except Exception as e:
+                        print(f"⚠️ שגיאה בחישוב מחזור חיים: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        # ✅ fallback במקרה של שגיאה
+                        progress_indicator = self._calculate_transit_progress(aspect)
+                        lifecycle_str = ""
+                        exact_str = ""
+
+                    # הדפסה
+                    report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str}")
+                    report.append(f"    - התקדמות: {progress_indicator}")
+                    report.append(f"    - עוצמה: {strength_indicator}")
                     report.append(f"    - אורב נוכחי: {orb:.2f}° (מתוך: {max_orb_value:.2f}°)")
+
+                    if lifecycle_str:
+                        report.append(lifecycle_str)
+                    if exact_str:
+                        report.append(exact_str)
                 else:
                     # היבט נטאל-נטאל - הפורמט הישן (Fallback)
                     report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str} | אורב: {orb:.2f}°")
@@ -314,6 +353,9 @@ class ChartAnalysis:
                 natal_chart_positions['Planets'],
                 transit_chart_positions['Planets'],
             )
+            for aspect in transit_aspects_list:
+                aspect['natal_planets_data'] = natal_chart_positions['Planets']
+
         except Exception as e:
             print(f"⚠️ אזהרה: שגיאה בחישוב היבטי מעבר: {e}. ממשיכים ללא היבטים.")
             transit_aspects_list = []
@@ -587,19 +629,25 @@ class ChartAnalysis:
         return report
 
     # TODO: להוסיף מספר ימים שימשך ההיבט, לשכלל את החישוב, להוסיף תצוגת לוח שנה שבה מסומן כל היבט.
-    def _calculate_transit_progress(self, aspect: dict) -> str:
+    def _calculate_transit_progress(self, aspect: dict, lifecycle: dict = None) -> str:
         """
         מחשב את מחוון ההתקדמות הלינארי של היבט מעבר בתוך האורב.
+        תומך גם במחזורים מורכבים עם נסיגות.
+
+        :param aspect: מילון ההיבט
+        :param lifecycle: (אופציונלי) נתוני מחזור החיים שכבר חושבו
+        :return: מחרוזת עם מחוון ויזואלי
         """
         import math
+        from datetime import datetime
 
         p2_is_retrograde = aspect.get('p2_is_retrograde', False)
 
-        # 1. טיפול במקרה של נסיגה
-        if p2_is_retrograde:
-            return "not supported yet. coming soon!"
+        # אם יש נתוני lifecycle - נשתמש בהם לחישוב מדויק יותר
+        if lifecycle and lifecycle.get('has_retrograde') and lifecycle.get('exact_dates'):
+            return self._calculate_complex_progress(lifecycle, datetime.now())
 
-        # 2. חישוב נתונים
+        # אחרת - חישוב פשוט (כמו קודם)
         current_orb = aspect['orb']
         max_orb = aspect.get('max_orb', 0.5)
         is_approaching = aspect.get('is_approaching', True)
@@ -607,21 +655,112 @@ class ChartAnalysis:
         if max_orb <= 0.001:
             return "[██████████] 100.0% (מדויק)"
 
-        # 3. חישוב אחוז התקדמות לפי מחזור החיים השלם של ההיבט
+        # חישוב אחוז התקדמות לפי מחזור החיים השלם
         if is_approaching:
             status_text = "מתחזק"
-            # מתקרב: מ-10° ל-0° = מ-0% ל-50%
-            # current_orb=10 → 0%, current_orb=0 → 50%
+            # מתקרב: מ-max_orb ל-0° = מ-0% ל-50%
             percent = ((max_orb - current_orb) / max_orb) * 50
         else:
             status_text = "נחלש"
-            # מתרחק: מ-0° ל-10° = מ-50% ל-100%
-            # current_orb=0 → 50%, current_orb=10 → 100%
+            # מתרחק: מ-0° ל-max_orb = מ-50% ל-100%
             percent = 50 + (current_orb / max_orb) * 50
 
-        # 4. בניית המחוון (10 תווים)
         percent = max(0.0, min(100.0, percent))
         num_blocks = math.floor(percent / 10)
         progress_bar = "█" * num_blocks + "░" * (10 - num_blocks)
 
         return f"[{progress_bar}] {percent:.1f}% ({status_text})"
+
+    def _calculate_complex_progress(self, lifecycle: dict, current_date) -> str:
+        """
+        מחשב התקדמות עבור מחזור מורכב עם נסיגות (מספר Exacts).
+
+        :param lifecycle: נתוני מחזור החיים
+        :param current_date: התאריך הנוכחי
+        :return: מחרוזת עם מחוון ויזואלי
+        """
+        import math
+        from datetime import datetime
+
+        cycle_start = lifecycle['start']
+        cycle_end = lifecycle['end']
+        exact_dates = lifecycle['exact_dates']
+
+        # אם אין Exacts - fallback לחישוב פשוט
+        if not exact_dates:
+            total_seconds = (cycle_end - cycle_start).total_seconds()
+            elapsed_seconds = (current_date - cycle_start).total_seconds()
+            percent = (elapsed_seconds / total_seconds) * 100 if total_seconds > 0 else 50
+            percent = max(0.0, min(100.0, percent))
+            num_blocks = math.floor(percent / 10)
+            progress_bar = "█" * num_blocks + "░" * (10 - num_blocks)
+            return f"[{progress_bar}] {percent:.1f}% (במחזור)"
+
+        # יש Exacts - חלק את המחזור לסגמנטים
+        num_exacts = len(exact_dates)
+
+        # בנה רשימת גבולות: [start, exact1, exact2, ..., exactN, end]
+        boundaries = [cycle_start] + [ex['date'] for ex in exact_dates] + [cycle_end]
+
+        # מצא באיזה סגמנט אנחנו נמצאים
+        current_segment = 0
+        for i in range(len(boundaries) - 1):
+            if boundaries[i] <= current_date <= boundaries[i + 1]:
+                current_segment = i
+                break
+
+        # חשב את האחוז בסגמנט הנוכחי
+        seg_start = boundaries[current_segment]
+        seg_end = boundaries[current_segment + 1]
+
+        seg_total_seconds = (seg_end - seg_start).total_seconds()
+        seg_elapsed_seconds = (current_date - seg_start).total_seconds()
+
+        if seg_total_seconds > 0:
+            seg_progress = seg_elapsed_seconds / seg_total_seconds
+        else:
+            seg_progress = 0.5
+
+        # חשב את האחוז הכולל
+        # כל סגמנט תופס חלק שווה מ-0 עד 100
+        segment_size = 100.0 / (num_exacts + 1)  # +1 כי יש num_exacts+1 סגמנטים
+        percent = (current_segment * segment_size) + (seg_progress * segment_size)
+
+        # קבע את הכיוון (מתחזק/נחלש)
+        # אם אנחנו לפני Exact - מתחזק, אחרי Exact - נחלש
+        if current_segment < len(exact_dates):
+            # יש Exact לפנינו
+            next_exact = exact_dates[current_segment]['date']
+            if current_date < next_exact:
+                status = "מתחזק"
+            else:
+                status = "נחלש"
+        else:
+            # עברנו את כל ה-Exacts
+            status = "נחלש"
+
+        percent = max(0.0, min(100.0, percent))
+        num_blocks = math.floor(percent / 10)
+        progress_bar = "█" * num_blocks + "░" * (10 - num_blocks)
+
+        return f"[{progress_bar}] {percent:.1f}% ({status}, מחזור מורכב)"
+
+    def _calculate_aspect_strength(self, current_orb: float, max_orb: float) -> str:
+        """
+        מחשב עוצמה של היבט על בסיס האורב הנוכחי בלבד.
+        0° = 100% עוצמה (מדויק), max_orb = 0% עוצמה (קצה הטווח)
+        """
+        import math
+
+        if max_orb <= 0.001:
+            return "[██████████] 100.0%"
+
+        # חישוב אחוז העוצמה: ככל שהאורב קטן יותר, העוצמה גבוהה יותר
+        strength_percent = ((max_orb - current_orb) / max_orb) * 100
+        strength_percent = max(0.0, min(100.0, strength_percent))
+
+        # בניית מחוון ויזואלי (10 בלוקים)
+        num_blocks = math.floor(strength_percent / 10)
+        strength_bar = "█" * num_blocks + "░" * (10 - num_blocks)
+
+        return f"[{strength_bar}] {strength_percent:.1f}%"

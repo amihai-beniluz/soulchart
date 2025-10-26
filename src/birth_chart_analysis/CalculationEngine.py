@@ -1,8 +1,8 @@
-import swisseph as swe
-from datetime import datetime
 import pytz
-import math
 import os
+import swisseph as swe
+from datetime import datetime, timedelta
+import math
 
 MODULE_DIR = os.path.dirname(__file__)
 PROJECT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir, os.pardir))
@@ -339,45 +339,47 @@ def calculate_current_positions(dt_object: datetime, lat: float, lon: float) -> 
     """
     chart_data = {'Planets': {}}
 
-    # המרת תאריך ושעה ליום יוליאני (JD) של זמן אוניברסלי (UT)
     jd_ut = swe.julday(dt_object.year, dt_object.month, dt_object.day,
                        dt_object.hour + dt_object.minute / 60.0 + dt_object.second / 3600.0)
 
-    # הגדרת דגלים לחישובים (אורך אקליפטי, גאוצנטרי, אסטרולוגי)
-    flags = swe.FLG_SWIEPH | swe.FLG_TOPOCTR | swe.FLG_EQUATORIAL
+    # ✅ דגלים נכונים - כמו במפת הלידה
+    # אם לא מציינים דגלים, swisseph משתמש בברירת המחדל שכוללת SPEED
+    # אבל בואו נהיה מפורשים:
 
-    # 1. הגדרת מיקום התצפית (המיקום הנוכחי)
-    swe.set_topo(lon, lat, 0)  # longitude, latitude, altitude
-
-    # 2. חישוב מיקומי הכוכבים
     for name_heb, planet_id in PLANET_IDS_FOR_TRANSIT.items():
-        # xx הוא מערך של 6 ערכים, xx[0] הוא אורך פלנטרי
-        xx, retflags = swe.calc_ut(jd_ut, planet_id, flags)
+        # ✅ ללא flags מיוחדים - ברירת המחדל של swe.calc_ut כוללת מהירות
+        calc_result = swe.calc_ut(jd_ut, planet_id)
 
-        lon_deg = ensure_float(xx[0])
-        speed = ensure_float(xx[3])  # מהירות אורכית (degree/day)
+        if not isinstance(calc_result, tuple) or len(calc_result) != 2:
+            print(f"⚠️ אזהרה: תוצאה לא תקינה עבור {name_heb}")
+            continue
 
-        is_retrograde = speed < 0.0
+        position_data = calc_result[0]
 
-        # חישוב מזל (הבתים לא רלוונטיים במפת מעבר)
-        planet_sign, _ = get_sign_and_house(lon_deg, [0.0] * 13)  # מעבירים רשימה ריקה של בתים
+        if not isinstance(position_data, (list, tuple)) or len(position_data) < 4:
+            print(f"⚠️ אזהרה: position_data לא תקין עבור {name_heb}")
+            continue
 
-        # ⚠️ נקודות (כמו ראש דרקון) אינן נחשבות כנסיגה קלאסית
-        if planet_id in [swe.MEAN_NODE, swe.TRUE_NODE, swe.MEAN_APOG, swe.OSCU_APOG]:
+        lon_deg = float(position_data[0])
+        vel = float(position_data[3])
+
+        is_retrograde = vel < 0
+
+        if planet_id in POINT_OBJECTS:
             is_retrograde = False
 
-        # שמירת הנתונים
+        planet_sign, _ = get_sign_and_house(lon_deg, [0.0] * 13)
+
         chart_data['Planets'][name_heb] = {
             'lon_deg': lon_deg,
             'sign': planet_sign,
-            'house': None,  # נשאר None
+            'house': None,
             'is_retrograde': is_retrograde,
-            'speed': speed,  # ✅ השם המקורי
-            'lon_speed_deg_per_day': speed  # ✅ גם השם החדש לתאימות
+            'speed': vel,
+            'lon_speed_deg_per_day': vel
         }
 
     return chart_data
-
 
 def calculate_transit_aspects(natal_planets: dict, transit_planets: dict) -> list[dict]:
     """
@@ -440,3 +442,298 @@ def calculate_transit_aspects(natal_planets: dict, transit_planets: dict) -> lis
                     })
 
     return aspects_list
+
+
+# מהירויות ממוצעות של כוכבים (מעלות ליום)
+PLANET_AVG_SPEEDS = {
+    swe.SUN: 1.0,
+    swe.MOON: 13.0,
+    swe.MERCURY: 1.2,
+    swe.VENUS: 1.0,
+    swe.MARS: 0.5,
+    swe.JUPITER: 0.08,
+    swe.SATURN: 0.03,
+    swe.URANUS: 0.01,
+    swe.NEPTUNE: 0.006,
+    swe.PLUTO: 0.004,
+    swe.MEAN_NODE: 0.05,
+    swe.CHIRON: 0.06,
+    swe.MEAN_APOG: 0.11
+}
+
+
+def calculate_orb_at_date(natal_lon: float, transit_planet_id: int,
+                          aspect_angle: float, date: datetime) -> float:
+    """
+    מחשב את האורב של היבט בתאריך ושעה מסוימים.
+    """
+    jd = swe.julday(date.year, date.month, date.day,
+                    date.hour + date.minute / 60.0 + date.second / 3600.0)
+
+    xx, _ = swe.calc_ut(jd, transit_planet_id)
+    transit_lon = ensure_float(xx[0])
+
+    separation = abs(natal_lon - transit_lon)
+    separation = min(separation, 360.0 - separation)
+
+    orb = abs(separation - aspect_angle)
+
+    return orb
+
+
+def check_retrograde_at_date(transit_planet_id: int, date: datetime) -> bool:
+    """
+    בודק אם כוכב נמצא בנסיגה בתאריך מסוים.
+    """
+    # נקודות לא יכולות להיות בנסיגה
+    if transit_planet_id in [swe.MEAN_NODE, swe.TRUE_NODE, swe.MEAN_APOG, swe.OSCU_APOG]:
+        return False
+
+    jd = swe.julday(date.year, date.month, date.day,
+                    date.hour + date.minute / 60.0 + date.second / 3600.0)
+
+    xx, _ = swe.calc_ut(jd, transit_planet_id)
+    speed = ensure_float(xx[3])  # מהירות אורכית
+
+    return speed < 0
+
+
+def binary_search_boundary(natal_lon: float, transit_planet_id: int,
+                           aspect_angle: float, max_orb: float,
+                           start_date: datetime, end_date: datetime,
+                           search_direction: str = 'forward') -> datetime:
+    """
+    מוצא את הגבול המדויק (כניסה/יציאה מאורב) באמצעות Binary Search.
+    """
+    tolerance_hours = 1.0
+
+    left = start_date
+    right = end_date
+
+    while (right - left).total_seconds() / 3600 > tolerance_hours:
+        mid = left + (right - left) / 2
+
+        mid_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
+                                        aspect_angle, mid)
+
+        is_in_orb = mid_orb <= max_orb
+
+        if search_direction == 'backward':
+            if is_in_orb:
+                right = mid
+            else:
+                left = mid
+        else:  # forward
+            if is_in_orb:
+                left = mid
+            else:
+                right = mid
+
+    return left + (right - left) / 2
+
+
+def find_exact_date(natal_lon: float, transit_planet_id: int,
+                    aspect_angle: float, start_date: datetime,
+                    end_date: datetime) -> datetime:
+    """
+    מוצא את התאריך המדויק שבו ההיבט הוא Exact (אורב מינימלי).
+    """
+    tolerance_hours = 1.0
+
+    left = start_date
+    right = end_date
+
+    golden_ratio = (math.sqrt(5) - 1) / 2
+
+    while (right - left).total_seconds() / 3600 > tolerance_hours:
+        mid1 = left + (right - left) * (1 - golden_ratio)
+        mid2 = left + (right - left) * golden_ratio
+
+        orb1 = calculate_orb_at_date(natal_lon, transit_planet_id,
+                                     aspect_angle, mid1)
+        orb2 = calculate_orb_at_date(natal_lon, transit_planet_id,
+                                     aspect_angle, mid2)
+
+        if orb1 < orb2:
+            right = mid2
+        else:
+            left = mid1
+
+    return left + (right - left) / 2
+
+
+def find_retrograde_turns(transit_planet_id: int, start_date: datetime,
+                          end_date: datetime) -> list:
+    """
+    מוצא את נקודות התפנית (Direct → Retrograde או להיפך) בטווח זמן נתון.
+    """
+    turns = []
+    current = start_date
+    prev_is_retro = None
+
+    while current <= end_date:
+        is_retro = check_retrograde_at_date(transit_planet_id, current)
+
+        if prev_is_retro is not None and is_retro != prev_is_retro:
+            turns.append({
+                'date': current,
+                'to_retrograde': is_retro
+            })
+
+        prev_is_retro = is_retro
+        current += timedelta(days=1)
+
+    return turns
+
+
+def find_all_exact_dates(natal_lon: float, transit_planet_id: int,
+                         aspect_angle: float, start_date: datetime,
+                         end_date: datetime, retrograde_turns: list) -> list:
+    """
+    מוצא את כל נקודות ה-Exact במחזור (יכול להיות 1-3).
+    """
+    exact_dates = []
+
+    if not retrograde_turns:
+        # אין נסיגות - Exact אחד פשוט
+        exact_date = find_exact_date(natal_lon, transit_planet_id, aspect_angle,
+                                     start_date, end_date)
+        is_retro = check_retrograde_at_date(transit_planet_id, exact_date)
+        exact_dates.append({
+            'date': exact_date,
+            'is_retrograde': is_retro
+        })
+    else:
+        # יש נסיגות - חלק לסגמנטים
+        segment_boundaries = [start_date] + [t['date'] for t in retrograde_turns] + [end_date]
+
+        for i in range(len(segment_boundaries) - 1):
+            seg_start = segment_boundaries[i]
+            seg_end = segment_boundaries[i + 1]
+
+            try:
+                exact_date = find_exact_date(natal_lon, transit_planet_id,
+                                             aspect_angle, seg_start, seg_end)
+                is_retro = check_retrograde_at_date(transit_planet_id, exact_date)
+
+                exact_dates.append({
+                    'date': exact_date,
+                    'is_retrograde': is_retro
+                })
+            except Exception:
+                continue
+
+    return exact_dates
+
+
+def get_retrograde_info(transit_planet_id: int, current_date: datetime) -> dict:
+    """
+    מחזיר מידע מלא על מצב הנסיגה של כוכב.
+    """
+    if transit_planet_id in [swe.MEAN_NODE, swe.TRUE_NODE, swe.MEAN_APOG, swe.OSCU_APOG]:
+        return {
+            'is_retrograde_now': False,
+            'next_station': None,
+            'station_type': None,
+            'has_retrograde_in_range': False
+        }
+
+    is_retro_now = check_retrograde_at_date(transit_planet_id, current_date)
+
+    next_station = None
+    station_type = None
+
+    # חפש תחנה הבאה בטווח של שנה
+    prev_is_retro = is_retro_now
+    for days_ahead in range(1, 400):
+        test_date = current_date + timedelta(days=days_ahead)
+        is_retro = check_retrograde_at_date(transit_planet_id, test_date)
+
+        if is_retro != prev_is_retro:
+            next_station = test_date
+            station_type = 'retrograde' if is_retro else 'direct'
+            break
+
+        prev_is_retro = is_retro
+
+    has_retrograde_in_range = (is_retro_now or next_station is not None)
+
+    return {
+        'is_retrograde_now': is_retro_now,
+        'next_station': next_station,
+        'station_type': station_type,
+        'has_retrograde_in_range': has_retrograde_in_range
+    }
+
+
+def calculate_aspect_lifecycle(natal_lon: float, transit_planet_id: int,
+                               aspect_angle: float, max_orb: float,
+                               current_date: datetime) -> dict:
+    """
+    מחשב את מחזור החיים המלא של היבט (כולל נסיגות).
+    """
+
+    # 1. קבל מידע על נסיגות
+    retro_info = get_retrograde_info(transit_planet_id, current_date)
+
+    # 2. קבע טווח סריקה
+    avg_speed = abs(PLANET_AVG_SPEEDS.get(transit_planet_id, 0.5))
+    estimated_days = (max_orb * 2) / avg_speed if avg_speed > 0 else 90
+    estimated_days = max(7, min(730, estimated_days))
+
+    # אם יש נסיגה בטווח - הרחב את החיפוש
+    if retro_info['has_retrograde_in_range']:
+        estimated_days = min(730, estimated_days * 3)
+
+    # 3. חיפוש אחורה לתחילת מחזור
+    cycle_start = current_date
+    for days_back in range(1, int(estimated_days)):
+        test_date = current_date - timedelta(days=days_back)
+        test_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
+                                         aspect_angle, test_date)
+        if test_orb > max_orb:
+            cycle_start = binary_search_boundary(
+                natal_lon, transit_planet_id, aspect_angle, max_orb,
+                test_date, current_date, 'backward'
+            )
+            break
+
+    # 4. חיפוש קדימה לסוף מחזור
+    cycle_end = current_date
+    for days_forward in range(1, int(estimated_days)):
+        test_date = current_date + timedelta(days=days_forward)
+        test_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
+                                         aspect_angle, test_date)
+        if test_orb > max_orb:
+            cycle_end = binary_search_boundary(
+                natal_lon, transit_planet_id, aspect_angle, max_orb,
+                current_date, test_date, 'forward'
+            )
+            break
+
+    # 5. חפש נסיגות בטווח
+    retrograde_turns = find_retrograde_turns(
+        transit_planet_id, cycle_start, cycle_end
+    )
+
+    has_retrograde = len(retrograde_turns) > 0
+
+    # 6. מצא את כל נקודות ה-Exact
+    exact_dates = find_all_exact_dates(
+        natal_lon, transit_planet_id, aspect_angle,
+        cycle_start, cycle_end, retrograde_turns
+    )
+
+    # 7. חשב נתונים
+    total_days = (cycle_end - cycle_start).days
+    num_passes = len(exact_dates)
+
+    return {
+        'start': cycle_start,
+        'end': cycle_end,
+        'exact_dates': exact_dates,
+        'total_days': total_days,
+        'has_retrograde': has_retrograde,
+        'num_passes': num_passes,
+        'retrograde_info': retro_info
+    }
