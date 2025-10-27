@@ -181,37 +181,30 @@ class ChartAnalysis:
             report.append("אין היבטים משמעותיים שנמצאו.")
             return report
 
-        for aspect in aspects_list:
-            p1_heb = aspect['planet1']
-            p2_heb = aspect['planet2']
-            aspect_heb = self.ASPECTS_DICT_HEB.get(aspect['aspect_name_eng'], aspect['aspect_name_eng'])
-            orb = aspect['orb']
+        # ✅ עבור טרנזיטים - חשב lifecycles מראש ומיין
+        if not is_natal_only:
+            from datetime import datetime
 
-            if is_natal_only:
-                # פורמט נקי עבור היבטים נטאליים בלבד
-                line_text = f"{p1_heb} {aspect_heb} {p2_heb} | אורב: {orb:.2f}°"
-                report.append(line_text)
-                is_transit_aspect = False
-            else:
-                # לוגיקה מקורית עבור היבטי מעבר-לידה (Bi-wheel)
-                # הוספת סוג המפה (נטאלי/מעבר)
-                p1_type_str = f" ({'לידה' if aspect.get('p1_type') == 'natal' else 'מעבר'})"
-                p2_type_str = f" ({'מעבר' if aspect.get('p2_type') == 'transit' else 'לידה'})"
+            # חישוב lifecycle לכל היבט מראש
+            aspects_with_lifecycle = []
 
-                is_transit_aspect = (aspect.get('p1_type') != aspect.get('p2_type'))
+            for aspect in aspects_list:
+                p1_heb = aspect['planet1']
+                p2_heb = aspect['planet2']
+                orb = aspect['orb']
+                max_orb_value = aspect.get('max_orb', 0.5)
 
-                if is_transit_aspect:
-                    max_orb_value = aspect.get('max_orb', 0.5)
-                    strength_indicator = self._calculate_aspect_strength(orb, max_orb_value)
+                # חישוב lifecycle
+                lifecycle = None
+                lifecycle_seconds = float('inf')
 
-                    # חישוב מחזור חיים
-                    try:
-                        natal_planets = aspect.get('natal_planets_data')
+                try:
+                    natal_planets = aspect.get('natal_planets_data')
+                    if natal_planets:
                         p1_natal_lon = natal_planets[p1_heb]['lon_deg']
                         transit_planet_id = PLANET_IDS_FOR_TRANSIT.get(p2_heb)
 
                         if transit_planet_id is not None:
-                            from datetime import datetime
                             lifecycle = calculate_aspect_lifecycle(
                                 p1_natal_lon,
                                 transit_planet_id,
@@ -220,97 +213,159 @@ class ChartAnalysis:
                                 datetime.now()
                             )
 
-                            # ✅ עדכון: העבר את lifecycle למחוון ההתקדמות
-                            progress_indicator = self._calculate_transit_progress(aspect, lifecycle)
+                            # חישוב משך הזמן בשניות
+                            if lifecycle['start'] and lifecycle['end']:
+                                lifecycle_seconds = (lifecycle['end'] - lifecycle['start']).total_seconds()
+                except Exception as e:
+                    print(f"⚠️ שגיאה בחישוב lifecycle: {e}")
 
-                            lifecycle_str = (
-                                f"    - תקופת פעילות: {lifecycle['start']:%d.%m.%Y %H:%M} - "
-                                f"{lifecycle['end']:%d.%m.%Y %H:%M} ({lifecycle['total_days']} ימים"
-                            )
+                # שמירה
+                aspects_with_lifecycle.append({
+                    'aspect': aspect,
+                    'lifecycle': lifecycle,
+                    'duration_seconds': lifecycle_seconds
+                })
 
-                            # הוסף "X מעברים" אם יש יותר מ-1
-                            if lifecycle['num_passes'] > 1:
-                                lifecycle_str += f", {lifecycle['num_passes']} מעברים"
-                            lifecycle_str += ")"
+            # ✅ הוסף כאן - סינון היבטים לא רלוונטיים
+            current_time = datetime.now()
 
-                            # בנה שורת Exact קומפקטית
-                            if lifecycle['exact_dates']:
-                                exact_parts = []
-                                for ex in lifecycle['exact_dates']:
-                                    retro_marker = " ⟲" if ex['is_retrograde'] else ""
-                                    exact_parts.append(f"{ex['date']:%d.%m.%Y}{retro_marker}")
+            # סנן רק היבטים שרלוונטיים עכשיו
+            active_aspects = []
+            for item in aspects_with_lifecycle:
+                lifecycle = item['lifecycle']
 
-                                exact_str = f"    - Exact: {', '.join(exact_parts)}"
-                            else:
-                                exact_str = ""
-                        else:
-                            # ✅ fallback אם אין transit_planet_id
-                            progress_indicator = self._calculate_transit_progress(aspect)
-                            lifecycle_str = ""
-                            exact_str = ""
-                    except Exception as e:
-                        print(f"⚠️ שגיאה בחישוב מחזור חיים: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        # ✅ fallback במקרה של שגיאה
-                        progress_indicator = self._calculate_transit_progress(aspect)
-                        lifecycle_str = ""
-                        exact_str = ""
+                # אם אין lifecycle - השאר את ההיבט (fallback)
+                if lifecycle is None:
+                    active_aspects.append(item)
+                    continue
 
-                    # הדפסה
-                    report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str}")
-                    report.append(f"    - התקדמות: {progress_indicator}")
-                    report.append(f"    - עוצמה: {strength_indicator}")
-                    report.append(f"    - אורב נוכחי: {orb:.2f}° (מתוך: {max_orb_value:.2f}°)")
-
-                    if lifecycle_str:
-                        report.append(lifecycle_str)
-                    if exact_str:
-                        report.append(exact_str)
+                # אם יש lifecycle - בדוק אם ההיבט עדיין פעיל
+                if lifecycle['start'] and lifecycle['end']:
+                    # היבט פעיל אם אנחנו בטווח הזמן שלו
+                    if lifecycle['start'] <= current_time <= lifecycle['end']:
+                        active_aspects.append(item)
+                    # או אם ההיבט עדיין לא התחיל (מקרה עתידי)
+                    elif current_time < lifecycle['start']:
+                        active_aspects.append(item)
+                    # אחרת - ההיבט כבר נגמר, לא מוסיפים אותו
                 else:
-                    # היבט נטאל-נטאל - הפורמט הישן (Fallback)
-                    report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str} | אורב: {orb:.2f}°")
+                    # אין תאריכים - השאר את ההיבט
+                    active_aspects.append(item)
 
-            if is_interpreted:
-                # לוגיקת הפרשנות
-                if is_natal_only:
-                    # פרשנות נטאל-נטאל (ממאגר 'aspects')
-                    aspects_data = self.chart_data.get('aspects', {})
-                    p1_eng = self.PLANET_NAMES_ENG[p1_heb]
-                    p2_eng = self.PLANET_NAMES_ENG[p2_heb]
-                    aspect_name_eng = aspect['aspect_name_eng']
+            # מיון לפי משך זמן (רק של ההיבטים הפעילים)
+            active_aspects.sort(key=lambda x: x['duration_seconds'])
 
-                    # לוגיקת שליפת מפתח מורכבת
-                    aspect_name_normalized = aspect_name_eng.replace('-', '')
-                    key_1 = f"{p1_eng} {aspect_name_normalized} {p2_eng}"
-                    key_2 = f"{p2_eng} {aspect_name_normalized} {p1_eng}"
-                    analysis = aspects_data.get(key_1)
-                    if not analysis: analysis = aspects_data.get(key_2)
-                    if not analysis and aspect_name_normalized != aspect_name_eng:
-                        key_1_dashed = f"{p1_eng} {aspect_name_eng} {p2_eng}"
-                        key_2_dashed = f"{p2_eng} {aspect_name_eng} {p1_eng}"
-                        analysis = aspects_data.get(key_1_dashed)
-                        if not analysis: analysis = aspects_data.get(key_2_dashed)
-                    if not analysis:
-                        analysis = f"❌ ניתוח היבט זה לא נמצא במאגר: {key_1} / {key_2}"
+            # מיון לפי משך זמן
+            aspects_with_lifecycle.sort(key=lambda x: x['duration_seconds'])
 
-                elif is_transit_aspect:
-                    # פרשנות מעבר-לידה (ממאגר 'aspects_transit')
-                    p1_eng = aspect.get('p1_eng_name') or self.PLANET_NAMES_ENG[p1_heb]
-                    p2_eng = aspect.get('p2_eng_name') or self.PLANET_NAMES_ENG[p2_heb]
-                    aspect_name = aspect['aspect_name_eng']
-                    key = f"Natal {p1_eng} {aspect_name} Transit {p2_eng}"
-                    aspects_data = self.chart_data.get('aspects_transit', {})
-                    analysis = aspects_data.get(key)
-                    if not analysis:
-                        analysis = f"❌ ניתוח היבט זה לא נמצא במאגר: {key}"
-                else:
-                    analysis = "❌ לא ניתן למצוא ניתוח - סוג ההיבט לא הוגדר כראוי."
+            # עכשיו עובדים עם הרשימה הממוינת והמסוננת
+            for item in active_aspects:  # ← שינוי כאן!
+                aspect = item['aspect']
+                lifecycle = item['lifecycle']
 
-                report.append(f"\n{analysis}\n")
-                if aspect != aspects_list[-1]:
-                    report.append("-" * 80)
+                p1_heb = aspect['planet1']
+                p2_heb = aspect['planet2']
+                aspect_heb = self.ASPECTS_DICT_HEB.get(aspect['aspect_name_eng'], aspect['aspect_name_eng'])
+                orb = aspect['orb']
+
+                is_transit_aspect = True  # כי אנחנו בטרנזיטים
+
+                max_orb_value = aspect.get('max_orb', 0.5)
+                strength_indicator = self._calculate_aspect_strength(orb, max_orb_value)
+
+                # חישוב progress (עם lifecycle שכבר קיים)
+                progress_indicator = self._calculate_transit_progress(aspect, lifecycle)
+
+                # בניית התצוגה
+                lifecycle_str = ""
+                exact_str = ""
+
+                if lifecycle and lifecycle['start'] is not None:
+                    duration_str = self._format_duration(lifecycle['start'], lifecycle['end'])
+
+                    lifecycle_str = (
+                        f"    - תקופת פעילות: {lifecycle['start']:%d.%m.%Y %H:%M} - "
+                        f"{lifecycle['end']:%d.%m.%Y %H:%M} ({duration_str}"
+                    )
+
+                    if lifecycle['num_passes'] > 1:
+                        lifecycle_str += f", {lifecycle['num_passes']} מעברים"
+                    lifecycle_str += ")"
+
+                    if lifecycle['exact_dates']:
+                        exact_parts = []
+                        for ex in lifecycle['exact_dates']:
+                            retro_marker = " ⟲" if ex['is_retrograde'] else ""
+                            exact_parts.append(f"{ex['date']:%d.%m.%Y %H:%M}{retro_marker}")
+
+                        exact_str = f"    - שיא ההיבט: {', '.join(exact_parts)}"
+
+                # הדפסה
+                p1_type_str = " (לידה)"
+                p2_type_str = " (מעבר)"
+
+                report.append(f"{p1_heb}{p1_type_str} {aspect_heb} {p2_heb}{p2_type_str}")
+                report.append(f"    - התקדמות: {progress_indicator}")
+                report.append(f"    - עוצמה: {strength_indicator}")
+                report.append(f"    - אורב נוכחי: {orb:.2f}° (מתוך: {max_orb_value:.2f}°)")
+
+                if lifecycle_str:
+                    report.append(lifecycle_str)
+                if exact_str:
+                    report.append(exact_str)
+
+                if is_interpreted:
+                    # לוגיקת הפרשנות
+                    if is_natal_only:
+                        # פרשנות נטאל-נטאל (ממאגר 'aspects')
+                        aspects_data = self.chart_data.get('aspects', {})
+                        p1_eng = self.PLANET_NAMES_ENG[p1_heb]
+                        p2_eng = self.PLANET_NAMES_ENG[p2_heb]
+                        aspect_name_eng = aspect['aspect_name_eng']
+
+                        # לוגיקת שליפת מפתח מורכבת
+                        aspect_name_normalized = aspect_name_eng.replace('-', '')
+                        key_1 = f"{p1_eng} {aspect_name_normalized} {p2_eng}"
+                        key_2 = f"{p2_eng} {aspect_name_normalized} {p1_eng}"
+                        analysis = aspects_data.get(key_1)
+                        if not analysis: analysis = aspects_data.get(key_2)
+                        if not analysis and aspect_name_normalized != aspect_name_eng:
+                            key_1_dashed = f"{p1_eng} {aspect_name_eng} {p2_eng}"
+                            key_2_dashed = f"{p2_eng} {aspect_name_eng} {p1_eng}"
+                            analysis = aspects_data.get(key_1_dashed)
+                            if not analysis: analysis = aspects_data.get(key_2_dashed)
+                        if not analysis:
+                            analysis = f"❌ ניתוח היבט זה לא נמצא במאגר: {key_1} / {key_2}"
+
+                    elif is_transit_aspect:
+                        # פרשנות מעבר-לידה (ממאגר 'aspects_transit')
+                        p1_eng = aspect.get('p1_eng_name') or self.PLANET_NAMES_ENG[p1_heb]
+                        p2_eng = aspect.get('p2_eng_name') or self.PLANET_NAMES_ENG[p2_heb]
+                        aspect_name = aspect['aspect_name_eng']
+                        key = f"Natal {p1_eng} {aspect_name} Transit {p2_eng}"
+                        aspects_data = self.chart_data.get('aspects_transit', {})
+                        analysis = aspects_data.get(key)
+                        if not analysis:
+                            analysis = f"❌ ניתוח היבט זה לא נמצא במאגר: {key}"
+                    else:
+                        analysis = "❌ לא ניתן למצוא ניתוח - סוג ההיבט לא הוגדר כראוי."
+
+                    report.append(f"\n{analysis}\n")
+                    if aspect != aspects_list[-1]:
+                        report.append("-" * 80)
+                    report.append("")
+
                 report.append("")
+
+        else:
+            for aspect in aspects_list:
+                p1_heb = aspect['planet1']
+                p2_heb = aspect['planet2']
+                aspect_heb = self.ASPECTS_DICT_HEB.get(aspect['aspect_name_eng'], aspect['aspect_name_eng'])
+                orb = aspect['orb']
+                # פורמט נקי עבור היבטים נטאליים בלבד
+                line_text = f"{p1_heb} {aspect_heb} {p2_heb} | אורב: {orb:.2f}°"
+                report.append(line_text)
 
         report.append("\n")
         return report
@@ -628,7 +683,7 @@ class ChartAnalysis:
 
         return report
 
-    # TODO: להוסיף מספר ימים שימשך ההיבט, לשכלל את החישוב, להוסיף תצוגת לוח שנה שבה מסומן כל היבט.
+    # TODO: להוסיף תצוגת לוח שנה שבה מסומן כל היבט.
     def _calculate_transit_progress(self, aspect: dict, lifecycle: dict = None) -> str:
         """
         מחשב את מחוון ההתקדמות הלינארי של היבט מעבר בתוך האורב.
@@ -647,7 +702,41 @@ class ChartAnalysis:
         if lifecycle and lifecycle.get('has_retrograde') and lifecycle.get('exact_dates'):
             return self._calculate_complex_progress(lifecycle, datetime.now())
 
-        # אחרת - חישוב פשוט (כמו קודם)
+        # ✅ תיקון: חישוב לפי זמן בפועל במקום אורב
+        if lifecycle and lifecycle.get('start') and lifecycle.get('end'):
+            cycle_start = lifecycle['start']
+            cycle_end = lifecycle['end']
+            exact_dates = lifecycle.get('exact_dates', [])
+            current_date = datetime.now()
+
+            # חישוב התקדמות לפי זמן
+            total_seconds = (cycle_end - cycle_start).total_seconds()
+            elapsed_seconds = (current_date - cycle_start).total_seconds()
+
+            if total_seconds > 0:
+                percent = (elapsed_seconds / total_seconds) * 100
+            else:
+                percent = 50.0
+
+            # קביעת סטטוס (מתחזק/נחלש) לפי מיקום ביחס ל-Exact
+            if exact_dates and len(exact_dates) > 0:
+                exact_date = exact_dates[0]['date']
+                if current_date < exact_date:
+                    status_text = "מתחזק"
+                else:
+                    status_text = "נחלש"
+            else:
+                # אם אין Exact - השתמש בלוגיקה הישנה
+                is_approaching = aspect.get('is_approaching', True)
+                status_text = "מתחזק" if is_approaching else "נחלש"
+
+            percent = max(0.0, min(100.0, percent))
+            num_blocks = math.floor(percent / 10)
+            progress_bar = "█" * num_blocks + "░" * (10 - num_blocks)
+
+            return f"[{progress_bar}] {percent:.1f}% ({status_text})"
+
+        # Fallback: חישוב פשוט אם אין נתוני lifecycle
         current_orb = aspect['orb']
         max_orb = aspect.get('max_orb', 0.5)
         is_approaching = aspect.get('is_approaching', True)
@@ -764,3 +853,55 @@ class ChartAnalysis:
         strength_bar = "█" * num_blocks + "░" * (10 - num_blocks)
 
         return f"[{strength_bar}] {strength_percent:.1f}%"
+
+    def _format_duration(self, start: datetime, end: datetime) -> str:
+        """
+        ממיר משך זמן לפורמט קריא (שנים/ימים/שעות).
+
+        :param start: תאריך התחלה
+        :param end: תאריך סיום
+        :return: מחרוזת בפורמט "X שנים" / "Y ימים" / "Z שעות"
+        """
+        from datetime import datetime
+
+        # אם start ו-end הם מחרוזות ISO - המר ל-datetime
+        if isinstance(start, str):
+            start = datetime.fromisoformat(start)
+        if isinstance(end, str):
+            end = datetime.fromisoformat(end)
+
+        # חישוב ההפרש
+        total_seconds = (end - start).total_seconds()
+        total_hours = total_seconds / 3600
+        total_days = total_seconds / (3600 * 24)
+        total_years = total_days / 365.25  # שנה ממוצעת כולל שנים מעוברות
+
+        # החלטה לפי הזמן
+        if total_years >= 1:
+            # הצג שנים
+            years = total_years
+            if years >= 2:
+                return f"{years:.1f} שנים"
+            else:
+                return f"{years:.1f} שנה"
+        elif total_days >= 1:
+            # הצג ימים
+            days = int(total_days)
+            if days == 1:
+                return "יום אחד"
+            elif days == 2:
+                return "יומיים"
+            else:
+                return f"{days} ימים"
+        else:
+            # הצג שעות
+            hours = int(total_hours)
+            if hours == 0:
+                minutes = int(total_seconds / 60)
+                return f"{minutes} דקות"
+            elif hours == 1:
+                return "שעה אחת"
+            elif hours == 2:
+                return "שעתיים"
+            else:
+                return f"{hours} שעות"

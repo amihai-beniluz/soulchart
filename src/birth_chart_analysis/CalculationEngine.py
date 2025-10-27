@@ -505,7 +505,7 @@ def binary_search_boundary(natal_lon: float, transit_planet_id: int,
     """
     מוצא את הגבול המדויק (כניסה/יציאה מאורב) באמצעות Binary Search.
     """
-    tolerance_hours = 1.0
+    tolerance_hours = 0.02
 
     left = start_date
     right = end_date
@@ -532,16 +532,61 @@ def binary_search_boundary(natal_lon: float, transit_planet_id: int,
     return left + (right - left) / 2
 
 
-def find_exact_date(natal_lon: float, transit_planet_id: int,
-                    aspect_angle: float, start_date: datetime,
-                    end_date: datetime) -> datetime:
+def find_exact_date_absolute(natal_lon: float, transit_planet_id: int,
+                             aspect_angle: float, reference_date: datetime,
+                             avg_speed: float, max_orb: float) -> datetime:
     """
-    מוצא את התאריך המדויק שבו ההיבט הוא Exact (אורב מינימלי).
-    """
-    tolerance_hours = 1.0
+    מוצא את התאריך המדויק שבו ההיבט הוא Exact (אורב מינימלי) באופן אבסולוטי.
 
-    left = start_date
-    right = end_date
+    :param natal_lon: קו אורך נטאלי
+    :param transit_planet_id: מזהה כוכב המעבר
+    :param aspect_angle: זווית ההיבט
+    :param reference_date: תאריך ייחוס (בדרך כלל current_date)
+    :param avg_speed: מהירות ממוצעת של הכוכב (מעלות ליום)
+    :param max_orb: אורב מקסימלי
+    :return: תאריך ה-Exact המדויק, או None אם לא נמצא
+    """
+    import math
+
+    # שלב 1: קבע את טווח הסריקה ורזולוציה
+    estimated_days = (max_orb * 2) / avg_speed if avg_speed > 0 else 90
+
+    if estimated_days < 1:
+        scan_range = timedelta(hours=int(estimated_days * 24 * 3))
+        search_increment = timedelta(hours=1)  # ← פי 6 פחות קריאות!
+    elif estimated_days < 7:
+        scan_range = timedelta(days=int(estimated_days * 3))
+        search_increment = timedelta(hours=12)  # במקום 3
+    elif estimated_days < 30:  # היבט בינוני (שבועות)
+        scan_range = timedelta(days=int(estimated_days * 3))
+        search_increment = timedelta(hours=12)
+    else:  # היבט ארוך (חודשים-שנים)
+        scan_range = timedelta(days=int(min(estimated_days * 3, 365)))
+        search_increment = timedelta(days=1)
+
+    # שלב 2: סריקה גסה - מצא את האזור עם האורב המינימלי
+    best_date = reference_date
+    best_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
+                                     aspect_angle, reference_date)
+
+    test_time = reference_date - scan_range
+    end_time = reference_date + scan_range
+
+    while test_time <= end_time:
+        orb = calculate_orb_at_date(natal_lon, transit_planet_id,
+                                    aspect_angle, test_time)
+
+        if orb < best_orb:
+            best_orb = orb
+            best_date = test_time
+
+        test_time += search_increment
+
+    # שלב 3: דיוק עם Golden Section Search
+    tolerance_hours = 0.1  # דיוק של 6 דקות
+
+    left = best_date - search_increment
+    right = best_date + search_increment
 
     golden_ratio = (math.sqrt(5) - 1) / 2
 
@@ -559,7 +604,16 @@ def find_exact_date(natal_lon: float, transit_planet_id: int,
         else:
             left = mid1
 
-    return left + (right - left) / 2
+    exact_date = left + (right - left) / 2
+
+    # וידוא: בדוק שה-Exact באמת בתוך האורב המקסימלי
+    final_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
+                                      aspect_angle, exact_date)
+
+    if final_orb > max_orb:
+        return None
+
+    return exact_date
 
 
 def find_retrograde_turns(transit_planet_id: int, start_date: datetime,
@@ -571,38 +625,77 @@ def find_retrograde_turns(transit_planet_id: int, start_date: datetime,
     current = start_date
     prev_is_retro = None
 
+    # ✅ סריקה בקפיצות של 3 ימים (במקום יומי) - מהיר יותר ומדויק יותר
+    scan_interval = timedelta(days=3)
+
     while current <= end_date:
         is_retro = check_retrograde_at_date(transit_planet_id, current)
 
         if prev_is_retro is not None and is_retro != prev_is_retro:
-            turns.append({
-                'date': current,
-                'to_retrograde': is_retro
-            })
+            # מצאנו תפנית - עכשיו נדייק אותה
+            # חפש את התאריך המדויק בטווח של 6 ימים אחורה
+            precise_turn_date = current
+
+            for days_back in range(1, 7):
+                test_date = current - timedelta(days=days_back)
+                test_is_retro = check_retrograde_at_date(transit_planet_id, test_date)
+
+                if test_is_retro == prev_is_retro:
+                    # מצאנו את הגבול - התפנית היא בין test_date ל-current
+                    precise_turn_date = test_date + timedelta(days=1)
+                    break
+
+            # ✅ אל תוסיף תפניות כפולות (פחות מ-7 ימים זה לזה)
+            is_duplicate = False
+            for existing_turn in turns:
+                if abs((existing_turn['date'] - precise_turn_date).days) < 7:
+                    is_duplicate = True
+                    break
+
+            if not is_duplicate:
+                turns.append({
+                    'date': precise_turn_date,
+                    'to_retrograde': is_retro
+                })
 
         prev_is_retro = is_retro
-        current += timedelta(days=1)
+        current += scan_interval
 
     return turns
 
 
 def find_all_exact_dates(natal_lon: float, transit_planet_id: int,
                          aspect_angle: float, start_date: datetime,
-                         end_date: datetime, retrograde_turns: list) -> list:
+                         end_date: datetime, retrograde_turns: list,
+                         max_orb: float) -> list:
     """
     מוצא את כל נקודות ה-Exact במחזור (יכול להיות 1-3).
+
+    :param natal_lon: קו אורך נטאלי
+    :param transit_planet_id: מזהה כוכב המעבר
+    :param aspect_angle: זווית ההיבט
+    :param start_date: תחילת מחזור החיים
+    :param end_date: סוף מחזור החיים
+    :param retrograde_turns: רשימת נקודות תפנית (נסיגות)
+    :param max_orb: אורב מקסימלי
+    :return: רשימת נקודות Exact
     """
     exact_dates = []
+    avg_speed = abs(PLANET_AVG_SPEEDS.get(transit_planet_id, 0.5))
 
     if not retrograde_turns:
         # אין נסיגות - Exact אחד פשוט
-        exact_date = find_exact_date(natal_lon, transit_planet_id, aspect_angle,
-                                     start_date, end_date)
-        is_retro = check_retrograde_at_date(transit_planet_id, exact_date)
-        exact_dates.append({
-            'date': exact_date,
-            'is_retrograde': is_retro
-        })
+        reference_date = start_date + (end_date - start_date) / 2
+
+        exact_date = find_exact_date_absolute(natal_lon, transit_planet_id, aspect_angle,
+                                              reference_date, avg_speed, max_orb)
+
+        if exact_date is not None:
+            is_retro = check_retrograde_at_date(transit_planet_id, exact_date)
+            exact_dates.append({
+                'date': exact_date,
+                'is_retrograde': is_retro
+            })
     else:
         # יש נסיגות - חלק לסגמנטים
         segment_boundaries = [start_date] + [t['date'] for t in retrograde_turns] + [end_date]
@@ -611,16 +704,53 @@ def find_all_exact_dates(natal_lon: float, transit_planet_id: int,
             seg_start = segment_boundaries[i]
             seg_end = segment_boundaries[i + 1]
 
+            # בדיקה: הסגמנט צריך להיות לפחות יום אחד
+            if (seg_end - seg_start).total_seconds() < 3600 * 24:
+                continue
+
             try:
-                exact_date = find_exact_date(natal_lon, transit_planet_id,
-                                             aspect_angle, seg_start, seg_end)
+                # בדיקה: האם יש באמת מינימום בסגמנט?
+                start_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
+                                                  aspect_angle, seg_start)
+                end_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
+                                                aspect_angle, seg_end)
+
+                # אם שני הקצוות בערך זהים - אין מינימום
+                if abs(start_orb - end_orb) < 0.1:
+                    continue
+
+                # חפש Exact בסגמנט
+                reference_date = seg_start + (seg_end - seg_start) / 2
+
+                exact_date = find_exact_date_absolute(natal_lon, transit_planet_id, aspect_angle,
+                                                      reference_date, avg_speed, max_orb)
+
+                if exact_date is None:
+                    continue
+
+                # וודא שה-Exact באמת בתוך האורב המקסימלי
+                exact_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
+                                                  aspect_angle, exact_date)
+
+                if exact_orb > max_orb * 0.8:
+                    continue
+
                 is_retro = check_retrograde_at_date(transit_planet_id, exact_date)
 
-                exact_dates.append({
-                    'date': exact_date,
-                    'is_retrograde': is_retro
-                })
-            except Exception:
+                # בדיקה: אל תוסיף Exact כפול
+                is_duplicate = False
+                for existing_exact in exact_dates:
+                    time_diff = abs((existing_exact['date'] - exact_date).total_seconds())
+                    if time_diff < 3600 * 12:  # פחות מ-12 שעות
+                        is_duplicate = True
+                        break
+
+                if not is_duplicate:
+                    exact_dates.append({
+                        'date': exact_date,
+                        'is_retrograde': is_retro
+                    })
+            except Exception as e:
                 continue
 
     return exact_dates
@@ -679,52 +809,94 @@ def calculate_aspect_lifecycle(natal_lon: float, transit_planet_id: int,
     # 2. קבע טווח סריקה
     avg_speed = abs(PLANET_AVG_SPEEDS.get(transit_planet_id, 0.5))
     estimated_days = (max_orb * 2) / avg_speed if avg_speed > 0 else 90
-    estimated_days = max(7, min(730, estimated_days))
 
-    # אם יש נסיגה בטווח - הרחב את החיפוש
+    # קביעת רזולוציית חיפוש
+    if estimated_days < 1:
+        search_increment = timedelta(hours=1)
+        search_range = int(estimated_days * 24 * 3)
+    elif estimated_days < 7:
+        search_increment = timedelta(hours=6)
+        search_range = int(estimated_days * 4 * 3)
+    elif estimated_days < 30:
+        search_increment = timedelta(days=1)
+        search_range = int(estimated_days * 3)
+    else:
+        search_increment = timedelta(days=7)
+        search_range = int((estimated_days / 7) * 3)
+
+    search_range = max(2, min(1000, search_range))
+
     if retro_info['has_retrograde_in_range']:
-        estimated_days = min(730, estimated_days * 3)
+        search_range *= 3
 
-    # 3. חיפוש אחורה לתחילת מחזור
-    cycle_start = current_date
-    for days_back in range(1, int(estimated_days)):
-        test_date = current_date - timedelta(days=days_back)
+    # ✅ שלב 1: מצא את ה-Exact תחילה
+    exact_date = find_exact_date_absolute(
+        natal_lon, transit_planet_id, aspect_angle,
+        current_date, avg_speed, max_orb
+    )
+
+    # אם לא נמצא Exact - נסה בכל זאת למצוא גבולות
+    if exact_date is None:
+        exact_date = current_date
+
+    # ✅ שלב 2: חפש את cycle_start - אחורה מה-Exact
+    cycle_start = None
+    found_start = False
+
+    test_time = exact_date
+    for i in range(search_range):
+        test_time = test_time - search_increment
         test_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
-                                         aspect_angle, test_date)
+                                         aspect_angle, test_time)
+
         if test_orb > max_orb:
+            # מצאנו נקודה מחוץ לאורב - דייק עם binary search
             cycle_start = binary_search_boundary(
                 natal_lon, transit_planet_id, aspect_angle, max_orb,
-                test_date, current_date, 'backward'
+                test_time, test_time + search_increment, 'backward'
             )
+            found_start = True
             break
 
-    # 4. חיפוש קדימה לסוף מחזור
-    cycle_end = current_date
-    for days_forward in range(1, int(estimated_days)):
-        test_date = current_date + timedelta(days=days_forward)
+    if not found_start:
+        cycle_start = exact_date - (search_increment * search_range)
+
+    # ✅ שלב 3: חפש את cycle_end - קדימה מה-Exact
+    cycle_end = None
+    found_end = False
+
+    test_time = exact_date
+    for i in range(search_range):
+        test_time = test_time + search_increment
         test_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
-                                         aspect_angle, test_date)
+                                         aspect_angle, test_time)
+
         if test_orb > max_orb:
+            # מצאנו נקודה מחוץ לאורב - דייק עם binary search
             cycle_end = binary_search_boundary(
                 natal_lon, transit_planet_id, aspect_angle, max_orb,
-                current_date, test_date, 'forward'
+                test_time - search_increment, test_time, 'forward'
             )
+            found_end = True
             break
 
-    # 5. חפש נסיגות בטווח
+    if not found_end:
+        cycle_end = exact_date + (search_increment * search_range)
+
+    # 4. חפש נסיגות בטווח
     retrograde_turns = find_retrograde_turns(
         transit_planet_id, cycle_start, cycle_end
     )
-
     has_retrograde = len(retrograde_turns) > 0
 
-    # 6. מצא את כל נקודות ה-Exact
+    # 5. מצא את כל נקודות ה-Exact (עכשיו עם נסיגות)
     exact_dates = find_all_exact_dates(
         natal_lon, transit_planet_id, aspect_angle,
-        cycle_start, cycle_end, retrograde_turns
+        cycle_start, cycle_end, retrograde_turns,
+        max_orb
     )
 
-    # 7. חשב נתונים
+    # 6. חשב נתונים
     total_days = (cycle_end - cycle_start).days
     num_passes = len(exact_dates)
 

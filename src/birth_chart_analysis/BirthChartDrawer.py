@@ -311,10 +311,12 @@ def draw_biwheel_planets(ax, planets_data: dict, ascendant_degree: float, is_tra
         base_planet_radius = 0.8  # רדיוס חיצוני לטרנזיט (כחול)
         planet_color = '#0000FF'  # כחול לטרנזיט
         text_color = '#00008B'
+        not_to_draw = ['אופק (AC)', 'רום שמיים (MC)', 'ורטקס']
     else:
         base_planet_radius = 0.62  # רדיוס פנימי לנטאל (אדום)
         planet_color = '#E74C3C'  # אדום לנטאל
         text_color = '#2C3E50'
+        not_to_draw = ['אופק (AC)', 'רום שמיים (MC)']
 
     line_start_radius = 0.47  # נמתח מטבעת האספקטים
     min_separation_angle = 3
@@ -324,7 +326,7 @@ def draw_biwheel_planets(ax, planets_data: dict, ascendant_degree: float, is_tra
     planets_list_for_overlap_check = []
     # סינון ואיסוף רק כוכבים שיוצגו בגלגל
     for name, data in planets_data.items():
-        if 'lon_deg' in data and data['lon_deg'] is not None and name not in ['אופק (AC)', 'רום שמיים (MC)', 'ורטקס']:
+        if 'lon_deg' in data and data['lon_deg'] is not None and name not in not_to_draw:
             original_lon = data['lon_deg']
             # המרה לזווית במערכת הציור, בהתאם ל-AC הנטאלי
             chart_angle = convert_to_chart_angle(original_lon, ascendant_degree)
