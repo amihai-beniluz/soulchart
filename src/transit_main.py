@@ -4,12 +4,12 @@ import traceback
 import json
 
 # ייבוא מהחבילות
-from .user import User
-from .birth_chart_analysis.ChartAnalysis import ChartAnalysis
-from .birth_chart_analysis.TransitCalculator import TransitCalculator  # ← חדש!
-from .utils import write_results_to_file, get_validated_date, get_validated_time
-from .birth_chart_analysis.CalculationEngine import calculate_chart_positions, calculate_current_positions
-from .birth_chart_analysis.BirthChartDrawer import draw_and_save_biwheel_chart
+from user import User
+from birth_chart_analysis.ChartAnalysis import ChartAnalysis
+from birth_chart_analysis.TransitCalculator import TransitCalculator  # ← חדש!
+from utils import write_results_to_file, get_validated_date, get_validated_time
+from birth_chart_analysis.CalculationEngine import calculate_chart_positions, calculate_current_positions
+from birth_chart_analysis.BirthChartDrawer import draw_and_save_biwheel_chart
 
 MODULE_DIR = os.path.dirname(__file__)
 PROJECT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir))
@@ -59,16 +59,15 @@ def get_mode_selection():
     print("\n" + "=" * 80)
     print("בחר מצב הרצה:")
     print("=" * 80)
-    print("1. ניתוח טרנזיטים נוכחיים (כמו קודם)")
-    print("2. חישוב טרנזיטים עתידיים + שמירה ל-JSON")
-    print("3. שניהם")
+    print("1. ניתוח טרנזיטים נוכחיים")
+    print("2. חישוב טרנזיטים עתידיים")
     print("=" * 80)
 
     while True:
-        choice = input("\nהכנס בחירה (1/2/3): ").strip()
-        if choice in ['1', '2', '3']:
+        choice = input("\nהכנס בחירה (1/2): ").strip()
+        if choice in ['1', '2']:
             return choice
-        print("❌ בחירה לא תקינה. אנא הזן 1, 2 או 3")
+        print("❌ בחירה לא תקינה. אנא הזן 1 או 2")
 
 
 def run_current_transits(user: User, current_location: tuple):
@@ -94,7 +93,7 @@ def run_current_transits(user: User, current_location: tuple):
         )
 
         # ניתוח טקסטואלי
-        transit_result = chart_analysis.analyze_transits_and_aspects(current_location, is_interpreted=False)
+        transit_result = chart_analysis.analyze_transits_and_aspects(current_location, is_interpreted=True)
 
         # שמירה
         birth_time_str = user.birthtime.strftime('%H-%M') if user.birthtime else 'Unknown'
@@ -159,7 +158,61 @@ def format_duration(start_str: str, end_str: str) -> str:
 def format_future_transits_report(result: dict) -> list:
     """
     ממיר את תוצאות ה-JSON לדוח טקסט קריא.
+    פורמט: פלוטו (לידה) חצי-משושה ירח (מעבר)
     """
+    from datetime import datetime
+
+    # מיפוי שמות היבטים לעברית
+    ASPECTS_HEB = {
+        'Conjunction': 'צמוד',
+        'Opposition': 'מול',
+        'Trine': 'משולש',
+        'Square': 'ריבוע',
+        'Sextile': 'משושה',
+        'Inconjunct': 'קווינקונקס',
+        'SemiSextile': 'חצי-משושה',
+        'SemiSquare': 'חצי-ריבוע',
+        'Sesquiquadrate': 'סקווירפיינד',
+        'Quintile': 'קווינטייל',
+        'Biquintile': 'ביקווינטייל'
+    }
+
+    def format_datetime(iso_str: str) -> str:
+        """המרת תאריך לפורמט DD.MM.YYYY HH:MM"""
+        dt = datetime.fromisoformat(iso_str)
+        return dt.strftime('%d.%m.%Y %H:%M')
+
+    def format_duration_precise(start_str: str, end_str: str) -> str:
+        """ממיר משך זמן לפורמט מדויק (שעות/ימים/חודשים)"""
+        start = datetime.fromisoformat(start_str)
+        end = datetime.fromisoformat(end_str)
+
+        total_seconds = (end - start).total_seconds()
+        total_hours = total_seconds / 3600
+        total_days = total_seconds / (3600 * 24)
+        total_months = total_days / 30.5
+
+        if total_months >= 2:
+            months = int(total_months)
+            return f"{months} חודשים"
+        elif total_months >= 1:
+            return "חודש"
+        elif total_days >= 2:
+            days = int(total_days)
+            return f"{days} ימים"
+        elif total_days >= 1:
+            return "יום"
+        elif total_hours >= 2:
+            hours = int(total_hours)
+            return f"{hours} שעות"
+        elif total_hours >= 1:
+            return "שעה"
+        else:
+            minutes = int(total_seconds / 60)
+            if minutes <= 1:
+                return "דקה"
+            return f"{minutes} דקות"
+
     report = []
 
     # כותרת
@@ -167,7 +220,10 @@ def format_future_transits_report(result: dict) -> list:
     report.append(f"=== טרנזיטים עתידיים עבור {metadata['user_name']} ===")
     report.append(f"תאריך לידה: {metadata['birth_date']}")
     report.append(f"נוצר ב: {metadata['calculated_at'][:19]}")
-    report.append(f"טווח: {metadata['range'][0][:10]} - {metadata['range'][1][:10]}")
+
+    start_date = datetime.fromisoformat(metadata['range'][0])
+    end_date = datetime.fromisoformat(metadata['range'][1])
+    report.append(f"טווח: {start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}")
     report.append(f"סה\"כ היבטים: {metadata['total_aspects']}")
     report.append("")
 
@@ -177,7 +233,7 @@ def format_future_transits_report(result: dict) -> list:
                          (datetime.fromisoformat(x['lifecycle']['end']) -
                           datetime.fromisoformat(x['lifecycle']['start'])).total_seconds()
                          if x['lifecycle']['start'] and x['lifecycle']['end']
-                         else float('inf')  # היבטים ללא תאריכים - בסוף
+                         else float('inf')
                      ))
 
     report.append("=" * 80)
@@ -188,33 +244,42 @@ def format_future_transits_report(result: dict) -> list:
     for i, aspect in enumerate(aspects, 1):
         lifecycle = aspect['lifecycle']
 
-        # שורת כותרת ההיבט
-        aspect_line = f"{aspect['natal_planet']} {aspect['aspect_type']} {aspect['transit_planet']}"
+        # תרגום שם ההיבט לעברית
+        aspect_name_heb = ASPECTS_HEB.get(aspect['aspect_type'], aspect['aspect_type'])
+
+        # שורת כותרת ההיבט - פורמט חדש
+        aspect_line = f"{aspect['natal_planet']} (לידה) {aspect_name_heb} {aspect['transit_planet']} (מעבר)"
         report.append(aspect_line)
 
-        # תקופת פעילות
+        # תקופת פעילות עם שעות
         if lifecycle['start'] and lifecycle['end']:
-            start_date = lifecycle['start'][:10]
-            end_date = lifecycle['end'][:10]
-            duration_str = format_duration(lifecycle['start'], lifecycle['end'])
+            start_formatted = format_datetime(lifecycle['start'])
+            end_formatted = format_datetime(lifecycle['end'])
+            duration_str = format_duration_precise(lifecycle['start'], lifecycle['end'])
+
             passes_suffix = ""
             if lifecycle['num_passes'] > 1:
                 passes_suffix = f", {lifecycle['num_passes']} מעברים"
 
-            report.append(f"    - תקופת פעילות: {start_date} - {end_date} ({duration_str}{passes_suffix})")
+            report.append(f"    - תקופת פעילות: {start_formatted} - {end_formatted} ({duration_str}{passes_suffix})")
 
-        # תאריכי Exact
+        # שיא ההיבט (Exact הראשון)
         if lifecycle['exact_dates']:
-            exact_parts = []
-            for ex in lifecycle['exact_dates']:
-                exact_date = ex['date'][:10]
-                retro_marker = " ⟲" if ex['is_retrograde'] else ""
-                exact_parts.append(f"{exact_date}{retro_marker}")
+            first_exact = lifecycle['exact_dates'][0]
+            exact_formatted = format_datetime(first_exact['date'])
+            retro_marker = " ⟲" if first_exact['is_retrograde'] else ""
 
-            report.append(f"    - Exact: {', '.join(exact_parts)}")
+            report.append(f"    - שיא ההיבט: {exact_formatted}{retro_marker}")
 
-        # אורב מקסימלי
-        report.append(f"    - אורב מקסימלי: {aspect['max_orb']:.2f}°")
+            # אם יש יותר מ-exact אחד, הוסף את השאר
+            if len(lifecycle['exact_dates']) > 1:
+                other_exacts = []
+                for ex in lifecycle['exact_dates'][1:]:
+                    ex_formatted = format_datetime(ex['date'])
+                    retro_mark = " ⟲" if ex['is_retrograde'] else ""
+                    other_exacts.append(f"{ex_formatted}{retro_mark}")
+
+                report.append(f"    - שיאים נוספים: {', '.join(other_exacts)}")
 
         report.append("")
 
@@ -225,7 +290,6 @@ def format_future_transits_report(result: dict) -> list:
 
     return report
 
-
 def run_future_transits(user: User, current_location: tuple):
     """מצב 2: חישוב טרנזיטים עתידיים"""
     print("\n--- חישוב טרנזיטים עתידיים ---\n")
@@ -233,8 +297,8 @@ def run_future_transits(user: User, current_location: tuple):
     # שאל כמה ימים קדימה
     while True:
         try:
-            days_str = input("כמה ימים קדימה לחשב? (ברירת מחדל: 90): ").strip()
-            days_ahead = int(days_str) if days_str else 90
+            days_str = input("כמה ימים קדימה לחשב? (ברירת מחדל: 30): ").strip()
+            days_ahead = int(days_str) if days_str else 30
             if days_ahead > 0:
                 break
             print("❌ יש להזין מספר חיובי")
@@ -275,24 +339,13 @@ def run_future_transits(user: User, current_location: tuple):
             print(f"{i}. [{event['event_type']}] {date_str}")
             print(f"   {event['description']}")
 
-        # שמירה ל-JSON
-        filename = f"future_transits_{user.name}_{datetime.now():%Y%m%d_%H%M}.json"
-        filepath = os.path.join(TRANSITS_DIR, filename)
-
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
-
-        print(f"\n✅ JSON נשמר ב: {filepath}")
-        print(f"📊 גודל קובץ: {os.path.getsize(filepath) / 1024:.1f} KB")
-
-        # שמירה גם כטקסט קריא
+        # שמירה כקובץ טקסט
         text_filename = f"future_transits_{user.name}_{datetime.now():%Y%m%d_%H%M}.txt"
         text_filepath = os.path.join(TRANSITS_DIR, text_filename)
 
-        text_report = format_future_transits_report(result)
-
+        report_lines = format_future_transits_report(result)  # ✅ המרה לשורות טקסט
         with open(text_filepath, 'w', encoding='utf-8') as f:
-            for line in text_report:
+            for line in report_lines:
                 f.write(line + "\n")
 
         print(f"✅ דוח טקסט נשמר ב: {text_filepath}")

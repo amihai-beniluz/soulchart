@@ -83,7 +83,7 @@ def main():
         )
 
         # ביצוע ניתוח טקסטואלי
-        report_text = chart_analysis.analyze_chart(False)
+        report_text = chart_analysis.analyze_chart(True)
         write_results_to_file(CHARTS_DIR, user.name, report_text, "_chart.txt")
 
         # ציור ושמירת מפת הלידה כתמונה

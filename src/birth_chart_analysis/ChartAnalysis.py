@@ -358,14 +358,36 @@ class ChartAnalysis:
                 report.append("")
 
         else:
+            # אם מחשבים עבור מפת לידה בלבד
             for aspect in aspects_list:
                 p1_heb = aspect['planet1']
                 p2_heb = aspect['planet2']
-                aspect_heb = self.ASPECTS_DICT_HEB.get(aspect['aspect_name_eng'], aspect['aspect_name_eng'])
-                orb = aspect['orb']
-                # פורמט נקי עבור היבטים נטאליים בלבד
-                line_text = f"{p1_heb} {aspect_heb} {p2_heb} | אורב: {orb:.2f}°"
-                report.append(line_text)
+                # פרשנות נטאל-נטאל (ממאגר 'aspects')
+                aspects_data = self.chart_data.get('aspects', {})
+                p1_eng = self.PLANET_NAMES_ENG[p1_heb]
+                p2_eng = self.PLANET_NAMES_ENG[p2_heb]
+                aspect_name_eng = aspect['aspect_name_eng']
+                # לוגיקת שליפת מפתח מורכבת
+                aspect_name_normalized = aspect_name_eng.replace('-', '')
+                key_1 = f"{p1_eng} {aspect_name_normalized} {p2_eng}"
+                key_2 = f"{p2_eng} {aspect_name_normalized} {p1_eng}"
+                report.append(key_1)
+                if is_interpreted:
+                    analysis = aspects_data.get(key_1)
+                    if not analysis:
+                        analysis = aspects_data.get(key_2)
+                    if not analysis and aspect_name_normalized != aspect_name_eng:
+                        key_1_dashed = f"{p1_eng} {aspect_name_eng} {p2_eng}"
+                        key_2_dashed = f"{p2_eng} {aspect_name_eng} {p1_eng}"
+                        analysis = aspects_data.get(key_1_dashed)
+                        if not analysis: analysis = aspects_data.get(key_2_dashed)
+                    if not analysis:
+                        analysis = f"❌ ניתוח היבט זה לא נמצא במאגר: {key_1} / {key_2}"
+                    report.append(f"\n{analysis}")
+                    if aspect != aspects_list[-1]:
+                        report.append("-" * 80)
+                    report.append("")
+
 
         report.append("\n")
         return report
@@ -500,22 +522,21 @@ class ChartAnalysis:
         # ----------------------------------------------------------------------
         report.extend(self._format_positions_report(
             planets_data,
-            "1. מיקומי כוכבי הלידה (נטאלי)",
+            "מיקומי כוכבי הלידה (נטאלי)",
             include_house=True
         ))
 
-        # ----------------------------------------------------------------------
-        # 2. דוח היבטים
-        # ----------------------------------------------------------------------
-        report.extend(self._format_aspects_report(
-            aspects_list,
-            "2. היבטים בין כוכבי הלידה (נטאליים)",
-            is_interpreted=is_interpreted,  # משתמש בדגל כדי לשלוט האם להדפיס פרשנות
-            is_natal_only=True  # מורה על פורמט נקי ללא סוג המפה בסוגריים
-        ))
-
-        # אם is_interpreted=False, אנו מסיימים כאן.
         if not is_interpreted:
+            # ----------------------------------------------------------------------
+            # דוח היבטים
+            # ----------------------------------------------------------------------
+            report.extend(self._format_aspects_report(
+                aspects_list,
+                "היבטים בין כוכבי הלידה (נטאליים)",
+                is_interpreted=False,  # משתמש בדגל כדי לשלוט האם להדפיס פרשנות
+                is_natal_only=True  # מורה על פורמט נקי ללא סוג המפה בסוגריים
+            ))
+            # אם is_interpreted=False, אנו מסיימים כאן.
             return report
 
         # ----------------------------------------------------------------------
@@ -680,6 +701,16 @@ class ChartAnalysis:
             if h != 12:
                 report.append("-" * 80 + "\n")
                 report.append("")
+
+        # ----------------------------------------------------------------------
+        # דוח היבטים
+        # ----------------------------------------------------------------------
+        report.extend(self._format_aspects_report(
+            aspects_list,
+            "היבטים בין כוכבי הלידה (נטאליים)",
+            is_interpreted=True,  # משתמש בדגל כדי לשלוט האם להדפיס פרשנות
+            is_natal_only=True  # מורה על פורמט נקי ללא סוג המפה בסוגריים
+        ))
 
         return report
 
