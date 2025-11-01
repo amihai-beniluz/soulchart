@@ -96,7 +96,8 @@ def get_planet_position(planet_id, dt):
     if planet_id is None:
         return None
 
-    jd = swe.julday(dt.year, dt.month, dt.day, dt.hour + dt.minute / 60)
+    jd = swe.julday(dt.year, dt.month, dt.day,
+                    dt.hour + dt.minute / 60.0 + dt.second / 3600.0)
 
     if planet_id == 10:  # North Node
         planet_id = swe.MEAN_NODE
@@ -105,8 +106,9 @@ def get_planet_position(planet_id, dt):
     elif planet_id == 15:  # Chiron
         planet_id = swe.CHIRON
 
-    result = swe.calc_ut(jd, planet_id)
-    return result[0][0]
+    xx, _ = swe.calc_ut(jd, planet_id)
+    result = xx[0]
+    return result
 
 
 def calculate_orb(natal_lon, transit_lon, aspect_angle):
@@ -188,7 +190,9 @@ def parse_text_file_improved(file_path):
                         break
 
                     # Look for "שיא ההיבט:" or dates in "שיאים נוספים:"
-                    date_match = re.search(r'(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})', next_line)
+                    # שינוי: חפש תאריך רק אם הוא מופיע אחרי 'שיא ההיבט' או 'שיאים נוספים'
+                    date_pattern_str = r'(?:שיא ההיבט:|שיאים נוספים:).*?(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})'
+                    date_match = re.search(date_pattern_str, next_line)
                     if date_match:
                         day, month, year, hour, minute = date_match.groups()
                         date_str = f"{year}-{month}-{day} {hour}:{minute}:00"
@@ -335,5 +339,5 @@ if __name__ == "__main__":
         else:
             natal_positions[planet_name] = get_planet_position(planet_id, birth_date)
 
-    file_path = os.path.join(FILE_DIR, 'future_transits_עמיחי_20251101_1747.txt')
+    file_path = os.path.join(FILE_DIR, 'future_transits_עמיחי_20251101_2313.txt')
     results = verify_exact_dates(file_path, natal_positions)
