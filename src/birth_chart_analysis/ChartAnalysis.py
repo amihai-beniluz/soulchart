@@ -181,45 +181,62 @@ class ChartAnalysis:
             report.append("אין היבטים משמעותיים שנמצאו.")
             return report
 
-        # ✅ עבור טרנזיטים - חשב lifecycles מראש ומיין
+        # ✅ עבור טרנזיטים - השתמש ב-lifecycle שכבר קיים!
         if not is_natal_only:
             from datetime import datetime
 
-            # חישוב lifecycle לכל היבט מראש
+            # ✅ ללא חישוב מחדש - רק מיון וסינון
             aspects_with_lifecycle = []
 
             for aspect in aspects_list:
-                p1_heb = aspect['planet1']
-                p2_heb = aspect['planet2']
-                orb = aspect['orb']
-                max_orb_value = aspect.get('max_orb', 0.5)
+                # 🎯 קבל את ה-lifecycle שכבר חושב
+                lifecycle = aspect.get('lifecycle')
 
-                # חישוב lifecycle
-                lifecycle = None
+                # אם אין lifecycle (fallback למקרים ישנים)
+                if lifecycle is None:
+                    # רק במקרה זה - חשב (fallback)
+                    try:
+                        p1_heb = aspect['planet1']
+                        p2_heb = aspect['planet2']
+
+                        natal_planets = aspect.get('natal_planets_data')
+                        if natal_planets:
+                            p1_natal_lon = natal_planets[p1_heb]['lon_deg']
+                            transit_planet_id = PLANET_IDS_FOR_TRANSIT.get(p2_heb)
+
+                            if transit_planet_id is not None:
+                                lifecycle = calculate_aspect_lifecycle(
+                                    p1_natal_lon,
+                                    transit_planet_id,
+                                    aspect['exact_angle'],
+                                    aspect.get('max_orb', 0.5),
+                                    datetime.now()
+                                )
+                    except Exception as e:
+                        print(f"⚠️ שגיאה בחישוב lifecycle fallback: {e}")
+                        lifecycle = None
+
+                # המרת lifecycle מISO strings ל-datetime אם נדרש
+                if lifecycle and isinstance(lifecycle.get('start'), str):
+                    lifecycle = {
+                        'start': datetime.fromisoformat(lifecycle['start']),
+                        'end': datetime.fromisoformat(lifecycle['end']),
+                        'exact_dates': [
+                            {
+                                'date': datetime.fromisoformat(ex['date']),
+                                'is_retrograde': ex['is_retrograde']
+                            }
+                            for ex in lifecycle['exact_dates']
+                        ],
+                        'num_passes': lifecycle['num_passes'],
+                        'has_retrograde': lifecycle['has_retrograde']
+                    }
+
+                # חישוב משך זמן
                 lifecycle_seconds = float('inf')
+                if lifecycle and lifecycle.get('start') and lifecycle.get('end'):
+                    lifecycle_seconds = (lifecycle['end'] - lifecycle['start']).total_seconds()
 
-                try:
-                    natal_planets = aspect.get('natal_planets_data')
-                    if natal_planets:
-                        p1_natal_lon = natal_planets[p1_heb]['lon_deg']
-                        transit_planet_id = PLANET_IDS_FOR_TRANSIT.get(p2_heb)
-
-                        if transit_planet_id is not None:
-                            lifecycle = calculate_aspect_lifecycle(
-                                p1_natal_lon,
-                                transit_planet_id,
-                                aspect['exact_angle'],
-                                max_orb_value,
-                                datetime.now()
-                            )
-
-                            # חישוב משך הזמן בשניות
-                            if lifecycle['start'] and lifecycle['end']:
-                                lifecycle_seconds = (lifecycle['end'] - lifecycle['start']).total_seconds()
-                except Exception as e:
-                    print(f"⚠️ שגיאה בחישוב lifecycle: {e}")
-
-                # שמירה
                 aspects_with_lifecycle.append({
                     'aspect': aspect,
                     'lifecycle': lifecycle,

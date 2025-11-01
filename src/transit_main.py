@@ -155,7 +155,7 @@ def format_duration(start_str: str, end_str: str) -> str:
             return f"{hours} שעות"
 
 
-def format_future_transits_report(result: dict) -> list:
+def format_future_transits_report(result: dict, is_time_sorted: bool = False) -> list:
     """
     ממיר את תוצאות ה-JSON לדוח טקסט קריא.
     פורמט: פלוטו (לידה) חצי-משושה ירח (מעבר)
@@ -191,8 +191,15 @@ def format_future_transits_report(result: dict) -> list:
         total_hours = total_seconds / 3600
         total_days = total_seconds / (3600 * 24)
         total_months = total_days / 30.5
+        total_years = total_days / 365.25
 
-        if total_months >= 2:
+        # הוסף את זה בהתחלה:
+        if total_years >= 1:
+            years = int(total_years)
+            if years == 1:
+                return "שנה"
+            return f"{years} שנים"
+        elif total_months >= 2:
             months = int(total_months)
             return f"{months} חודשים"
         elif total_months >= 1:
@@ -227,17 +234,24 @@ def format_future_transits_report(result: dict) -> list:
     report.append(f"סה\"כ היבטים: {metadata['total_aspects']}")
     report.append("")
 
-    # מיון ההיבטים לפי משך הזמן (מהקצר לארוך)
-    aspects = sorted(result['aspects'],
-                     key=lambda x: (
-                         (datetime.fromisoformat(x['lifecycle']['end']) -
-                          datetime.fromisoformat(x['lifecycle']['start'])).total_seconds()
-                         if x['lifecycle']['start'] and x['lifecycle']['end']
-                         else float('inf')
-                     ))
+    # מיון ההיבטים - לפי משך זמן או לפי תאריך התחלה
+    if is_time_sorted:
+        # מיון לפי תאריך התחלה (מהמוקדם למאוחר)
+        aspects = sorted(result['aspects'],
+                         key=lambda x: x['lifecycle']['start'])
+    else:
+        # מיון לפי משך הזמן (מהקצר לארוך)
+        aspects = sorted(result['aspects'],
+                         key=lambda x: (
+                             (datetime.fromisoformat(x['lifecycle']['end']) -
+                              datetime.fromisoformat(x['lifecycle']['start'])).total_seconds()
+                             if x['lifecycle']['start'] and x['lifecycle']['end']
+                             else float('inf')
+                         ))
 
     report.append("=" * 80)
-    report.append("רשימת כל ההיבטים העתידיים")
+    sort_type_text = "ממוין לפי תאריך התחלה (כרונולוגי)" if is_time_sorted else "ממוין לפי משך זמן (מהקצר לארוך)"
+    report.append(f"רשימת כל ההיבטים העתידיים - {sort_type_text}")
     report.append("=" * 80)
     report.append("")
 
@@ -290,6 +304,7 @@ def format_future_transits_report(result: dict) -> list:
 
     return report
 
+
 def run_future_transits(user: User, current_location: tuple):
     """מצב 2: חישוב טרנזיטים עתידיים"""
     print("\n--- חישוב טרנזיטים עתידיים ---\n")
@@ -304,6 +319,18 @@ def run_future_transits(user: User, current_location: tuple):
             print("❌ יש להזין מספר חיובי")
         except ValueError:
             print("❌ יש להזין מספר שלם")
+
+    # שאל איך למיין את התוצאות
+    print("\nאיך למיין את התוצאות?")
+    print("1. לפי משך זמן (מהקצר לארוך) - ברירת מחדל")
+    print("2. לפי תאריך התחלה (כרונולוגי)")
+
+    while True:
+        sort_choice = input("הכנס בחירה (1/2, ברירת מחדל: 1): ").strip()
+        if sort_choice in ['', '1', '2']:
+            is_time_sorted = (sort_choice == '2')
+            break
+        print("❌ בחירה לא תקינה. אנא הזן 1 או 2")
 
     try:
         # יצירת מחשבון
@@ -324,26 +351,11 @@ def run_future_transits(user: User, current_location: tuple):
         # הצגת סיכום
         print(f"\n📊 נמצאו {result['metadata']['total_aspects']} היבטים!")
 
-        # הצגת 10 האירועים הבאים
-        print("\n📅 10 האירועים הקרובים ביותר:")
-        print("-" * 80)
-
-        events = calculator.get_next_events(
-            from_date=start_date,
-            days_ahead=days_ahead,
-            limit=10
-        )
-
-        for i, event in enumerate(events, 1):
-            date_str = datetime.fromisoformat(event['date']).strftime('%d.%m.%Y %H:%M')
-            print(f"{i}. [{event['event_type']}] {date_str}")
-            print(f"   {event['description']}")
-
         # שמירה כקובץ טקסט
         text_filename = f"future_transits_{user.name}_{datetime.now():%Y%m%d_%H%M}.txt"
         text_filepath = os.path.join(TRANSITS_DIR, text_filename)
 
-        report_lines = format_future_transits_report(result)  # ✅ המרה לשורות טקסט
+        report_lines = format_future_transits_report(result, is_time_sorted)  # ✅ המרה לשורות טקסט
         with open(text_filepath, 'w', encoding='utf-8') as f:
             for line in report_lines:
                 f.write(line + "\n")

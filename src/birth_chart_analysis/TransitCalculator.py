@@ -1,7 +1,8 @@
 """
-TransitCalculator - מחשבון טרנזיטים עתידיים (גרסה 3.2)
+TransitCalculator - מחשבון טרנזיטים עתידיים (גרסה 3.3)
 ==========================================================
-גישה נכונה: בדיקת היבטים קיימים ב-start_date + חיפוש קדימה
+🔧 FIX v3.3: מניעת דיווח על היבטים שגויים
+- אם lifecycle מחזיר None (היבט לא תקין), דלג עליו
 """
 
 from datetime import datetime, timedelta
@@ -50,12 +51,34 @@ class TransitCalculator:
         :param location: (latitude, longitude) מיקום נוכחי
         :return: dict עם metadata ורשימת היבטים
         """
+        # בדיקות תקינות נתונים
+        if not self.natal_planets:
+            raise ValueError("natal_planets is empty - לא ניתן לחשב טרנזיטים")
+
+        if start_date >= end_date:
+            raise ValueError(f"start_date ({start_date}) חייב להיות לפני end_date ({end_date})")
+
         days = (end_date - start_date).days
+
+        # אזהרה על טווח זמן גדול מדי
+        if days > 365 * 5:
+            import warnings
+            warnings.warn(
+                f"⚠️ טווח זמן גדול מאוד: {days} ימים ({days/365:.1f} שנים). "
+                f"החישוב עלול לקחת זמן רב.",
+                UserWarning
+            )
+
         all_aspects = []
 
         # ========================================
         # שלב 1: מצא היבטים שכבר קיימים ב-start_date
         # ========================================
+        # הלוגיקה:
+        # 1. מחשבים את כל ההיבטים הפעילים ב-start_date
+        # 2. לכל היבט, מחפשים את מחזור החיים המלא שלו
+        # 3. אם המחזור חופף את הטווח שלנו - מוסיפים אותו
+        # זה חשוב כדי לתפוס היבטים שהתחילו לפני start_date אבל עדיין פעילים
 
         # חישוב מיקומי טרנזיט ב-start_date
         transit_chart = calculate_current_positions(
@@ -84,13 +107,15 @@ class TransitCalculator:
                 continue
 
             aspect_angle = aspect['exact_angle']
+            current_orb = aspect['orb']
             max_orb = aspect['max_orb']
 
             # יצירת מפתח ייחודי להיבט
             aspect_key = f"{natal_planet}_{transit_planet}_{aspect_name}"
 
             try:
-                # חשב lifecycle סביב start_date
+                # חשב lifecycle - משתמש ב-start_date כנקודת התחלה
+                # הפונקציה calculate_aspect_lifecycle תמצא את המחזור המלא סביב תאריך זה
                 lifecycle = calculate_aspect_lifecycle(
                     natal_lon,
                     transit_planet_id,
@@ -98,6 +123,10 @@ class TransitCalculator:
                     max_orb,
                     start_date
                 )
+
+                # 🔧 FIX v3.3: אם lifecycle הוא None - ההיבט לא תקין, דלג
+                if lifecycle is None:
+                    continue
 
                 # בדוק אם ההיבט חופף את הטווח
                 # (התחיל לפני אבל עדיין פעיל, או מתחיל בטווח)
@@ -126,7 +155,13 @@ class TransitCalculator:
                     existing_aspects_set.add(aspect_key)
 
             except Exception as e:
-                print(f"   ⚠️  שגיאה בחישוב lifecycle ל-{aspect_key}: {e}")
+                import traceback
+                print(f"   ⚠️  שגיאה בחישוב lifecycle ל-{aspect_key}")
+                print(f"       פרטי ההיבט: natal_lon={natal_lon:.2f}°, aspect={aspect_name} ({aspect_angle}°)")
+                print(f"       אורב: {current_orb:.3f}° / {max_orb}°, תאריך: {start_date.date()}")
+                print(f"       שגיאה: {type(e).__name__}: {e}")
+                # אם רוצים traceback מלא, ניתן להוסיף:
+                # traceback.print_exc()
                 continue
 
         # ========================================
