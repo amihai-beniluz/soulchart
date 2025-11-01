@@ -96,8 +96,15 @@ def get_planet_position(planet_id, dt):
     if planet_id is None:
         return None
 
-    jd = swe.julday(dt.year, dt.month, dt.day,
-                    dt.hour + dt.minute / 60.0 + dt.second / 3600.0)
+    # 🔧 FIX: אם dt כבר UTC - השתמש בו ישירות, אחרת המר
+    if dt.tzinfo is not None:
+        # DateTime עם timezone - השתמש בו כמו שהוא
+        jd = swe.julday(dt.year, dt.month, dt.day,
+                        dt.hour + dt.minute / 60.0 + dt.second / 3600.0)
+    else:
+        # DateTime ללא timezone - נניח שזה UTC (התנהגות ישנה)
+        jd = swe.julday(dt.year, dt.month, dt.day,
+                        dt.hour + dt.minute / 60.0)
 
     if planet_id == 10:  # North Node
         planet_id = swe.MEAN_NODE
@@ -218,6 +225,16 @@ def verify_exact_dates(file_path, natal_positions):
 
     aspects = parse_text_file_improved(file_path)
 
+    print("\n🔍 DEBUG - Looking for Moon Trine Sun:")
+    for aspect in aspects:
+        if (aspect['natal_planet'] == 'Sun' and
+                aspect['transit_planet'] == 'Moon' and
+                aspect['aspect_type'] == 'Trine'):
+            print(f"  Found: {aspect['natal_planet']} {aspect['aspect_type']} {aspect['transit_planet']}")
+            print(f"  Exact dates found: {len(aspect['exact_dates'])}")
+            for ex in aspect['exact_dates']:
+                print(f"    - {ex['date']} (retro: {ex['is_retrograde']})")
+
     print(f"✓ Total aspects found: {len(aspects)}")
 
     total_exact = sum(len(a['exact_dates']) for a in aspects)
@@ -315,6 +332,14 @@ def verify_exact_dates(file_path, natal_positions):
             print(f"   {err['aspect']}{retro}")
             print(f"      Date: {err['date'][:16]} | Orb: {err['orb']:.2f}°")
 
+    if minor_errors:
+        print(f"\n⚠️  MINOR ERRORS (showing first 10):")
+        for err in sorted(minor_errors, key=lambda x: -x['orb'])[:10]:
+            retro = " ⟲" if err['is_retro'] else ""
+            print(f"   {err['aspect']}{retro}")
+            print(f"      Date: {err['date'][:16]} | Orb: {err['orb']:.2f}°")
+
+
     return {
         'total': verified,
         'perfect': len(perfect),
@@ -330,14 +355,22 @@ def verify_exact_dates(file_path, natal_positions):
 
 
 if __name__ == "__main__":
+    import pytz  # 🔧 FIX: הוסף import
+
     birth_date = datetime(2001, 11, 23, 18, 31)
+
+    # 🔧 FIX: המר לאיזור זמן ישראלי ואז ל-UTC (כמו ב-CalculationEngine)
+    local_tz = pytz.timezone('Asia/Jerusalem')
+    local_dt = local_tz.localize(birth_date)
+    utc_dt = local_dt.astimezone(pytz.utc)
 
     natal_positions = {}
     for planet_name, planet_id in PLANET_IDS.items():
         if planet_id is None:
             natal_positions[planet_name] = None
         else:
-            natal_positions[planet_name] = get_planet_position(planet_id, birth_date)
+            # 🔧 FIX: השתמש ב-UTC datetime במקום ב-naive datetime
+            natal_positions[planet_name] = get_planet_position(planet_id, utc_dt)
 
-    file_path = os.path.join(FILE_DIR, 'future_transits_עמיחי_20251101_2313.txt')
+    file_path = os.path.join(FILE_DIR, 'future_transits_עמיחי_20251102_0056.txt')
     results = verify_exact_dates(file_path, natal_positions)

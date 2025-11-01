@@ -501,7 +501,7 @@ def find_exact_date_absolute(natal_lon: float, transit_planet_id: int,
     if avg_speed > 5:  # MOON - זקוק לטיפול מיוחד
         search_window_hours = 12
         tolerance_seconds = 60  # דקה
-        scan_points = 50
+        scan_points = 100  # 🔧 FIX: היה 50, עכשיו 100
     elif avg_speed > 0.5:  # Sun, Mercury, Venus, Mars
         search_window_hours = 48  # 🔧 FIX: היה 24, עכשיו 48
         tolerance_seconds = 300  # 5 דקות
@@ -680,9 +680,10 @@ def find_all_exact_dates(natal_lon: float, transit_planet_id: int,
                          end_date: datetime, retrograde_turns: list,
                          max_orb: float) -> list:
     """
-    🔧 FIXED v3.5: מוצא את כל נקודות ה-Exact במחזור.
+    🔧 FIXED v3.8: מוצא את כל נקודות ה-Exact במחזור.
 
-    שיפור: שימוש בנקודת ייחוס טובה יותר (אמצע הטווח)
+    שינוי מרכזי: סריקת כל המחזור למציאת המינימום הגלובלי במקום
+    להסתמך על אמצע המחזור כנקודת ייחוס.
     """
     exact_dates = []
     avg_speed = abs(PLANET_AVG_SPEEDS.get(transit_planet_id, 0.5))
@@ -700,35 +701,43 @@ def find_all_exact_dates(natal_lon: float, transit_planet_id: int,
     if not retrograde_turns:
         # אין נסיגות - Exact אחד פשוט
 
-        # 🔧 FIX v3.5: סריקה בכל הטווח למציאת המינימום האמיתי
+        # 🔧 FIX v3.8: במקום להשתמש באמצע, סרוק את כל המחזור!
         min_orb = float('inf')
-        best_date = None
+        best_date = start_date
 
-        scan_points = 40  # 🔧 FIX: היה 20, עכשיו 40
-        for i in range(scan_points + 1):
-            test_date = start_date + (end_date - start_date) * (i / scan_points)
+        # קבע צעד סריקה לפי מהירות
+        if avg_speed > 5:  # ירח
+            scan_step = timedelta(minutes=30)
+        elif avg_speed > 0.5:
+            scan_step = timedelta(hours=2)
+        elif avg_speed > 0.05:
+            scan_step = timedelta(hours=12)
+        else:
+            scan_step = timedelta(days=1)
+
+        # סרוק את כל המחזור
+        current = start_date
+        while current <= end_date:
             orb = calculate_orb_at_date(natal_lon, transit_planet_id,
-                                        aspect_angle, test_date)
+                                        aspect_angle, current)
             if orb < min_orb:
                 min_orb = orb
-                best_date = test_date
+                best_date = current
+            current += scan_step
 
-        # חיפוש מדויק סביב הנקודה הטובה
-        if best_date:
-            exact_date = find_exact_date_absolute(
-                natal_lon, transit_planet_id, aspect_angle,
-                best_date,  # 🔧 FIX: נקודת ייחוס טובה
-                avg_speed, max_orb
-            )
-        else:
-            exact_date = None
+        # עכשיו השתמש בנקודה הטובה ביותר שמצאנו
+        exact = find_exact_date_absolute(
+            natal_lon, transit_planet_id, aspect_angle,
+            best_date,  # 🔧 FIX: נקודת ייחוס טובה!
+            avg_speed, max_orb
+        )
 
-        if exact_date is not None:
-            is_retro = check_retrograde_at_date(transit_planet_id, exact_date)
+        if exact is not None:
+            is_retro = check_retrograde_at_date(transit_planet_id, exact)
             actual_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
-                                               aspect_angle, exact_date)
+                                               aspect_angle, exact)
             exact_dates.append({
-                'date': exact_date,
+                'date': exact,
                 'is_retrograde': is_retro,
                 'actual_orb': round(actual_orb, 4)
             })
@@ -744,11 +753,15 @@ def find_all_exact_dates(natal_lon: float, transit_planet_id: int,
             if (seg_end - seg_start).total_seconds() < 3600 * 12:
                 continue
 
-            # 🔧 FIX v3.5: מצא את המינימום בסגמנט
+            # 🔧 FIX v3.8: סרוק את הסגמנט למציאת המינימום
             seg_min_orb = float('inf')
             seg_best_date = None
 
-            seg_scan_points = 20
+            if avg_speed > 5:  # ירח
+                seg_scan_points = 30
+            else:
+                seg_scan_points = 20
+
             for j in range(seg_scan_points + 1):
                 test_date = seg_start + (seg_end - seg_start) * (j / seg_scan_points)
                 orb = calculate_orb_at_date(natal_lon, transit_planet_id,
@@ -761,18 +774,18 @@ def find_all_exact_dates(natal_lon: float, transit_planet_id: int,
             if seg_best_date:
                 exact = find_exact_date_absolute(
                     natal_lon, transit_planet_id, aspect_angle,
-                    seg_best_date,  # 🔧 FIX: נקודת ייחוס טובה
+                    seg_best_date,  # 🔧 FIX: נקודת ייחוס טובה!
                     avg_speed, max_orb
                 )
             else:
                 exact = None
 
             if exact:
-                # וודא שבאמת בתוך האורב
+                # ווידוא שבאמת בתוך האורב
                 exact_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
                                                   aspect_angle, exact)
 
-                if exact_orb <= max_orb:  # 🔧 FIX v3.6: find_exact_date_absolute כבר מבטיח אורב קטן
+                if exact_orb <= max_orb:
                     is_retro = get_planet_speed_at_date(transit_planet_id, exact) < 0
 
                     # בדוק כפילויות
@@ -869,7 +882,7 @@ def calculate_aspect_lifecycle(natal_lon: float, transit_planet_id: int,
     retro_info = get_retrograde_info(transit_planet_id, current_date)
 
     # 2. קבע טווח סריקה
-    # TODO check if it's good enough estimation.
+    # TODO בדוק אם זו הערכה טובה מספיק
     avg_speed = abs(PLANET_AVG_SPEEDS.get(transit_planet_id, 0.5))
     estimated_days = (max_orb * 2) / avg_speed if avg_speed > 0 else 90
 
@@ -894,7 +907,6 @@ def calculate_aspect_lifecycle(natal_lon: float, transit_planet_id: int,
         search_range *= 3
 
     # ✅ שלב 1: מצא את ה-Exact תחילה
-    # TODO שימצא את כולם בטווח ואז מביניהם את ההכי קרוב לטווח זמנים שהוזן
     exact_date = find_exact_date_absolute(
         natal_lon, transit_planet_id, aspect_angle,
         current_date, avg_speed, max_orb
