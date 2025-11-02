@@ -6,7 +6,7 @@ import json
 # ייבוא מהחבילות
 from user import User
 from birth_chart_analysis.ChartAnalysis import ChartAnalysis
-from birth_chart_analysis.TransitCalculator import TransitCalculator  # ← חדש!
+from birth_chart_analysis.TransitCalculator import TransitCalculator
 from utils import write_results_to_file, get_validated_date, get_validated_time
 from birth_chart_analysis.CalculationEngine import calculate_chart_positions, calculate_current_positions
 from birth_chart_analysis.BirthChartDrawer import draw_and_save_biwheel_chart
@@ -54,6 +54,28 @@ def get_current_location_input():
             print("❌ פורמט מיקום לא תקין. אנא הזן מחדש.")
 
 
+def get_interpretation_choice():
+    """
+    שואל את המשתמש האם רוצה פרשנות אסטרולוגית מלאה.
+
+    :return: True אם רוצה פרשנות, False אחרת
+    """
+    print("\n" + "=" * 80)
+    print("האם ברצונך לקבל פרשנות אסטרולוגית מלאה?")
+    print("=" * 80)
+    print("כן (1) - דוח מפורט עם הסברים והנחיות אסטרולוגיות")
+    print("לא (2) - רק מיקומי כוכבים והיבטים ללא פרשנות (ברירת מחדל)")
+    print("=" * 80)
+
+    while True:
+        choice = input("\nהכנס בחירה (1/2, ברירת מחדל: 2): ").strip()
+        if choice == '1':
+            return True
+        elif choice in ['', '2']:
+            return False
+        print("❌ בחירה לא תקינה. אנא הזן 1 או 2")
+
+
 def get_mode_selection():
     """בחירת מצב הרצה."""
     print("\n" + "=" * 80)
@@ -70,8 +92,8 @@ def get_mode_selection():
         print("❌ בחירה לא תקינה. אנא הזן 1 או 2")
 
 
-def run_current_transits(user: User, current_location: tuple):
-    """מצב 1: ניתוח טרנזיטים נוכחיים (כמו הקוד המקורי)"""
+def run_current_transits(user: User, current_location: tuple, is_interpreted: bool = True):
+    """מצב 1: ניתוח טרנזיטים נוכחיים"""
     print("\n--- ביצוע ניתוח מעברים נוכחיים ---\n")
     try:
         chart_analysis = ChartAnalysis(user)
@@ -92,12 +114,16 @@ def run_current_transits(user: User, current_location: tuple):
             current_location[1]
         )
 
-        # ניתוח טקסטואלי
-        transit_result = chart_analysis.analyze_transits_and_aspects(current_location, is_interpreted=True)
+        # ניתוח טקסטואלי עם בחירת פרשנות
+        transit_result = chart_analysis.analyze_transits_and_aspects(
+            current_location,
+            is_interpreted=is_interpreted
+        )
 
         # שמירה
         birth_time_str = user.birthtime.strftime('%H-%M') if user.birthtime else 'Unknown'
-        filename_prefix = f"Natal_{user.birthdate}_at_{birth_time_str}_Transit_to_{datetime.now().strftime('%Y-%m-%d_%H-%M')}"
+        suffix = "_interpreted" if is_interpreted else "_positions"
+        filename_prefix = f"Natal_{user.birthdate}_at_{birth_time_str}_Transit_to_{datetime.now().strftime('%Y-%m-%d_%H-%M')}{suffix}"
 
         write_results_to_file(TRANSITS_DIR, filename_prefix, transit_result, ".txt")
 
@@ -112,6 +138,8 @@ def run_current_transits(user: User, current_location: tuple):
         )
 
         print("✅ ניתוח טרנזיטים נוכחיים הסתיים!")
+        print(f"   📄 דוח: {TRANSITS_DIR}/{filename_prefix}.txt")
+        print(f"   🖼️  תמונה: {image_filename}")
 
     except Exception as e:
         print(f"\n❌ שגיאה בניתוח מעברים נוכחיים: {e}")
@@ -155,10 +183,14 @@ def format_duration(start_str: str, end_str: str) -> str:
             return f"{hours} שעות"
 
 
-def format_future_transits_report(result: dict, is_time_sorted: bool = False) -> list:
+def format_future_transits_report(result: dict, is_time_sorted: bool = False, is_interpreted: bool = False) -> list:
     """
     ממיר את תוצאות ה-JSON לדוח טקסט קריא.
-    פורמט: פלוטו (לידה) חצי-משושה ירח (מעבר)
+
+    :param result: תוצאות החישוב מ-TransitCalculator
+    :param is_time_sorted: האם למיין לפי זמן או לפי תאריך
+    :param is_interpreted: האם להוסיף פרשנות אסטרולוגית
+    :return: רשימת שורות לדוח
     """
     from datetime import datetime
 
@@ -193,7 +225,6 @@ def format_future_transits_report(result: dict, is_time_sorted: bool = False) ->
         total_months = total_days / 30.5
         total_years = total_days / 365.25
 
-        # הוסף את זה בהתחלה:
         if total_years >= 1:
             years = int(total_years)
             if years == 1:
@@ -224,7 +255,8 @@ def format_future_transits_report(result: dict, is_time_sorted: bool = False) ->
 
     # כותרת
     metadata = result['metadata']
-    report.append(f"=== טרנזיטים עתידיים עבור {metadata['user_name']} ===")
+    interpretation_text = " (עם פרשנות)" if is_interpreted else ""
+    report.append(f"=== טרנזיטים עתידיים עבור {metadata['user_name']}{interpretation_text} ===")
     report.append(f"תאריך לידה: {metadata['birth_date']}")
     report.append(f"נוצר ב: {metadata['calculated_at'][:19]}")
 
@@ -234,13 +266,11 @@ def format_future_transits_report(result: dict, is_time_sorted: bool = False) ->
     report.append(f"סה\"כ היבטים: {metadata['total_aspects']}")
     report.append("")
 
-    # מיון ההיבטים - לפי משך זמן או לפי תאריך התחלה
+    # מיון ההיבטים
     if is_time_sorted:
-        # מיון לפי תאריך התחלה (מהמוקדם למאוחר)
         aspects = sorted(result['aspects'],
                          key=lambda x: x['lifecycle']['start'])
     else:
-        # מיון לפי משך הזמן (מהקצר לארוך)
         aspects = sorted(result['aspects'],
                          key=lambda x: (
                              (datetime.fromisoformat(x['lifecycle']['end']) -
@@ -255,17 +285,23 @@ def format_future_transits_report(result: dict, is_time_sorted: bool = False) ->
     report.append("=" * 80)
     report.append("")
 
+    # 🎯 טעינת נתוני פרשנות אם נדרש
+    chart_data = None
+    if is_interpreted:
+        from birth_chart_analysis.ChartDataLoaders import load_all_chart_data
+        chart_data = load_all_chart_data()
+
     for i, aspect in enumerate(aspects, 1):
         lifecycle = aspect['lifecycle']
 
         # תרגום שם ההיבט לעברית
         aspect_name_heb = ASPECTS_HEB.get(aspect['aspect_type'], aspect['aspect_type'])
 
-        # שורת כותרת ההיבט - פורמט חדש
+        # שורת כותרת ההיבט
         aspect_line = f"{aspect['natal_planet']} (לידה) {aspect_name_heb} {aspect['transit_planet']} (מעבר)"
         report.append(aspect_line)
 
-        # תקופת פעילות עם שעות
+        # תקופת פעילות
         if lifecycle['start'] and lifecycle['end']:
             start_formatted = format_datetime(lifecycle['start'])
             end_formatted = format_datetime(lifecycle['end'])
@@ -277,7 +313,7 @@ def format_future_transits_report(result: dict, is_time_sorted: bool = False) ->
 
             report.append(f"    - תקופת פעילות: {start_formatted} - {end_formatted} ({duration_str}{passes_suffix})")
 
-        # שיא ההיבט (Exact הראשון)
+        # שיא ההיבט
         if lifecycle['exact_dates']:
             first_exact = lifecycle['exact_dates'][0]
             exact_formatted = format_datetime(first_exact['date'])
@@ -285,7 +321,7 @@ def format_future_transits_report(result: dict, is_time_sorted: bool = False) ->
 
             report.append(f"    - שיא ההיבט: {exact_formatted}{retro_marker}")
 
-            # אם יש יותר מ-exact אחד, הוסף את השאר
+            # שיאים נוספים
             if len(lifecycle['exact_dates']) > 1:
                 other_exacts = []
                 for ex in lifecycle['exact_dates'][1:]:
@@ -294,6 +330,29 @@ def format_future_transits_report(result: dict, is_time_sorted: bool = False) ->
                     other_exacts.append(f"{ex_formatted}{retro_mark}")
 
                 report.append(f"    - שיאים נוספים: {', '.join(other_exacts)}")
+
+        # 🎯 הוספת פרשנות אם נדרש
+        if is_interpreted and chart_data:
+            PLANET_NAMES_ENG = {
+                'שמש': 'Sun', 'ירח': 'Moon', 'מרקורי': 'Mercury',
+                'ונוס': 'Venus', 'מאדים': 'Mars', 'צדק': 'Jupiter',
+                'שבתאי': 'Saturn', 'אורנוס': 'Uranus', 'נפטון': 'Neptune',
+                'פלוטו': 'Pluto', 'ראש הרקון': 'North Node', 'לילית': 'Lilith',
+                'כירון': 'Chiron'
+            }
+
+            p1_eng = PLANET_NAMES_ENG.get(aspect['natal_planet'], aspect['natal_planet'])
+            p2_eng = PLANET_NAMES_ENG.get(aspect['transit_planet'], aspect['transit_planet'])
+            aspect_name_eng = aspect['aspect_type']
+
+            key = f"Natal {p1_eng} {aspect_name_eng} Transit {p2_eng}"
+            aspects_transit_data = chart_data.get('aspects_transit', {})
+            analysis = aspects_transit_data.get(key)
+
+            if analysis:
+                report.append(f"\n📖 פרשנות:\n{analysis}")
+            else:
+                report.append(f"\n⚠️ פרשנות להיבט זה לא נמצאה במאגר")
 
         report.append("")
 
@@ -305,7 +364,7 @@ def format_future_transits_report(result: dict, is_time_sorted: bool = False) ->
     return report
 
 
-def run_future_transits(user: User, current_location: tuple):
+def run_future_transits(user: User, current_location: tuple, is_interpreted: bool = False):
     """מצב 2: חישוב טרנזיטים עתידיים"""
     print("\n--- חישוב טרנזיטים עתידיים ---\n")
 
@@ -352,10 +411,11 @@ def run_future_transits(user: User, current_location: tuple):
         print(f"\n📊 נמצאו {result['metadata']['total_aspects']} היבטים!")
 
         # שמירה כקובץ טקסט
-        text_filename = f"future_transits_{user.name}_{datetime.now():%Y%m%d_%H%M}.txt"
+        suffix = "_interpreted" if is_interpreted else "_positions"
+        text_filename = f"future_transits_{user.name}_{datetime.now():%Y%m%d_%H%M}{suffix}.txt"
         text_filepath = os.path.join(TRANSITS_DIR, text_filename)
 
-        report_lines = format_future_transits_report(result, is_time_sorted)  # ✅ המרה לשורות טקסט
+        report_lines = format_future_transits_report(result, is_time_sorted, is_interpreted)
         with open(text_filepath, 'w', encoding='utf-8') as f:
             for line in report_lines:
                 f.write(line + "\n")
@@ -375,14 +435,16 @@ def main():
     # בחירת מצב
     mode = get_mode_selection()
 
+    # 🎯 בחירת פרשנות
+    is_interpreted = get_interpretation_choice()
+
     # הרצה לפי הבחירה
     if mode == '1':
-        run_current_transits(user, current_location)
+        # TODO בשתי סוגי ההדפסות (עם או בלי פרשנות) יש היבטים ללא שיא, לוודא שכל השיפורים שהכנסנו למוד 2 נכנסו גם לפה
+        run_current_transits(user, current_location, is_interpreted)
     elif mode == '2':
-        run_future_transits(user, current_location)
-    elif mode == '3':
-        run_current_transits(user, current_location)
-        run_future_transits(user, current_location)
+        # TODO פורטונה ראש דרקון AC MC :להבין למה לא נמצאות הפרשנויות של
+        run_future_transits(user, current_location, is_interpreted)
 
     print("\n🎉 הסתיים בהצלחה!")
 

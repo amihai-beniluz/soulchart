@@ -51,6 +51,28 @@ def get_user_input():
     return User(name, birthdate, birthtime, location), nikud_dict
 
 
+def get_interpretation_choice():
+    """
+    שואל את המשתמש האם רוצה פרשנות אסטרולוגית מלאה.
+
+    :return: True אם רוצה פרשנות, False אחרת
+    """
+    print("\n" + "=" * 80)
+    print("האם ברצונך לקבל פרשנות אסטרולוגית מלאה?")
+    print("=" * 80)
+    print("כן (1) - דוח מפורט עם הסברים והנחיות אסטרולוגיות")
+    print("לא (2) - רק מיקומי כוכבים והיבטים ללא פרשנות (ברירת מחדל)")
+    print("=" * 80)
+
+    while True:
+        choice = input("\nהכנס בחירה (1/2, ברירת מחדל: 2): ").strip()
+        if choice == '1':
+            return True
+        elif choice in ['', '2']:
+            return False
+        print("❌ בחירה לא תקינה. אנא הזן 1 או 2")
+
+
 def main():
     import traceback
     user, nikud_dict = get_user_input()
@@ -72,6 +94,9 @@ def main():
             print(f"⚠️ חסרים נתונים לחישוב מפה מדויקת (שעה או מיקום)")
             return
 
+        # 🎯 בחירת פרשנות
+        is_interpreted = get_interpretation_choice()
+
         chart_analysis = ChartAnalysis(user)
 
         # ✅ חישוב נתוני המפה הגולמיים (Planets, HouseCusps, Aspects)
@@ -82,13 +107,20 @@ def main():
             user.location[1]  # Longitude
         )
 
-        # ביצוע ניתוח טקסטואלי
-        report_text = chart_analysis.analyze_chart(True)
-        write_results_to_file(CHARTS_DIR, user.name, report_text, "_chart.txt")
+        # ביצוע ניתוח טקסטואלי עם הבחירה
+        report_text = chart_analysis.analyze_chart(is_interpreted)
+
+        # שם הקובץ משקף את סוג הדוח
+        suffix = "_chart_interpreted.txt" if is_interpreted else "_chart_positions.txt"
+        write_results_to_file(CHARTS_DIR, user.name, report_text, suffix)
 
         # ציור ושמירת מפת הלידה כתמונה
         image_filename = os.path.join(CHARTS_DIR, f"{user.name}_chart.png")
         draw_and_save_chart(chart_positions, user, image_filename)
+
+        print(f"\n✅ ניתוח מפת לידה הושלם!")
+        print(f"   📄 דוח: {CHARTS_DIR}/{user.name}{suffix}")
+        print(f"   🖼️  תמונה: {image_filename}")
 
     except Exception as e:
         print(f"\n❌ אירעה שגיאה בניתוח מפת לידה: {e}")

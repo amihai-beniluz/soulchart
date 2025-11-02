@@ -1,8 +1,10 @@
 """
-TransitCalculator - מחשבון טרנזיטים עתידיים (גרסה 3.3)
+TransitCalculator - מחשבון טרנזיטים עתידיים (גרסה 3.4)
 ==========================================================
-🔧 FIX v3.3: מניעת דיווח על היבטים שגויים
-- אם lifecycle מחזיר None (היבט לא תקין), דלג עליו
+🔧 FIX v3.4: תיקון קריטי - דיוק start/end dates
+- במקום להשתמש ב-start_date כנקודת ייחוס למציאת lifecycle של היבט קיים,
+  מחפשים אחורה למצוא את cycle_start האמיתי
+- משתמשים ב-find_next_aspect_cycle שמתוכנן למצוא cycle חדש קדימה
 """
 
 from datetime import datetime, timedelta
@@ -15,7 +17,8 @@ from .CalculationEngine import (
     PLANET_IDS_FOR_TRANSIT,
     ASPECTS_DICT,
     ASPECT_ORBS,
-    PLANET_AVG_SPEEDS
+    PLANET_AVG_SPEEDS,
+    calculate_orb_at_date
 )
 
 
@@ -74,11 +77,7 @@ class TransitCalculator:
         # ========================================
         # שלב 1: מצא היבטים שכבר קיימים ב-start_date
         # ========================================
-        # הלוגיקה:
-        # 1. מחשבים את כל ההיבטים הפעילים ב-start_date
-        # 2. לכל היבט, מחפשים את מחזור החיים המלא שלו
-        # 3. אם המחזור חופף את הטווח שלנו - מוסיפים אותו
-        # זה חשוב כדי לתפוס היבטים שהתחילו לפני start_date אבל עדיין פעילים
+        # 🔧 FIX v3.4: חיפוש אחורה למציאת cycle_start האמיתי
 
         # חישוב מיקומי טרנזיט ב-start_date
         transit_chart = calculate_current_positions(
@@ -91,7 +90,7 @@ class TransitCalculator:
             self.natal_planets, transit_positions
         )
 
-        # עבור כל היבט נוכחי, חשב את ה-lifecycle המלא
+        # עבור כל היבט נוכחי, מצא את ה-cycle המלא
         existing_aspects_set = set()
 
         for aspect in current_aspects:
@@ -107,61 +106,133 @@ class TransitCalculator:
                 continue
 
             aspect_angle = aspect['exact_angle']
-            current_orb = aspect['orb']
             max_orb = aspect['max_orb']
 
             # יצירת מפתח ייחודי להיבט
             aspect_key = f"{natal_planet}_{transit_planet}_{aspect_name}"
 
             try:
-                # חשב lifecycle - משתמש ב-start_date כנקודת התחלה
-                # הפונקציה calculate_aspect_lifecycle תמצא את המחזור המלא סביב תאריך זה
-                lifecycle = calculate_aspect_lifecycle(
+                # 🔧 FIX v3.4: חפש אחורה למציאת ה-cycle_start האמיתי
+                # חישוב מותאם לפי מהירות ממוצעת וזמן הקפה של כל פלנטה
+
+                avg_speed = abs(PLANET_AVG_SPEEDS.get(transit_planet_id, 0.5))
+
+                # חישוב זמן הקפה משוער (כמה ימים לוקח לעבור 360°)
+                orbital_period_days = 360.0 / avg_speed if avg_speed > 0 else 365 * 100
+
+                # חישוב טווח חיפוש אחורה - מותאם לפי סוג הפלנטה
+                if avg_speed > 5:  # ירח - מהיר מאוד
+                    # הירח עובר 360° ב-27 ימים, אז מספיק לחפש שבוע
+                    lookback_days = 7
+
+                elif avg_speed > 0.5:  # שמש, מרקורי, ונוס, מאדים
+                    # פלנטות מהירות - חפש בהתאם ל-orb פי 2 (לכיסוי נסיגות)
+                    lookback_days = (max_orb * 2) / avg_speed
+                    lookback_days = min(lookback_days, 120)  # הגבלה: 4 חודשים
+
+                elif avg_speed > 0.05:  # צדק (0.08°/day)
+                    # צדק: 360° / 0.08 = ~4500 ימים (12 שנים)
+                    # חפש עד 1/3 מזמן ההקפה או max_orb*3, הקטן מביניהם
+                    lookback_days = min(
+                        (max_orb * 3) / avg_speed,
+                        orbital_period_days / 3
+                    )
+                    lookback_days = min(lookback_days, 365 * 1.5)  # הגבלה: שנה וחצי
+
+                elif avg_speed > 0.01:  # שבתאי (0.03°/day)
+                    # שבתאי: 360° / 0.03 = ~12000 ימים (29 שנים)
+                    # אורב גדול + תנועה איטית = טווח ארוך
+                    lookback_days = min(
+                        (max_orb * 3) / avg_speed,
+                        orbital_period_days / 4
+                    )
+                    lookback_days = min(lookback_days, 365 * 2.5)  # הגבלה: שנתיים וחצי
+
+                else:  # אורנוס, נפטון, פלוטו - איטיים מאוד
+                    # אורנוס: 84 שנים, נפטון: 165 שנים, פלוטו: 248 שנים
+                    # כאן צריך טווח ארוך כי הנסיגות יכולות ליצור מחזורים של שנים
+                    lookback_days = min(
+                        (max_orb * 4) / avg_speed,  # פי 4 בגלל נסיגות ארוכות
+                        orbital_period_days / 5
+                    )
+                    lookback_days = min(lookback_days, 365 * 5)  # הגבלה: 5 שנים
+                search_start = start_date - timedelta(days=lookback_days)
+
+                # חפש את המחזור שמכיל את start_date
+                # נשתמש ב-find_next_aspect_cycle שמתחיל מלפני start_date
+                cycle = find_next_aspect_cycle(
                     natal_lon,
                     transit_planet_id,
                     aspect_angle,
                     max_orb,
-                    start_date
+                    search_start,
+                    end_date
                 )
 
-                # 🔧 FIX v3.3: אם lifecycle הוא None - ההיבט לא תקין, דלג
-                if lifecycle is None:
-                    continue
+                # אם מצאנו cycle, בדוק שהוא אכן מכיל את start_date
+                if cycle is not None:
+                    cycle_start_dt = datetime.fromisoformat(cycle['start']) if isinstance(cycle['start'], str) else cycle['start']
+                    cycle_end_dt = datetime.fromisoformat(cycle['end']) if isinstance(cycle['end'], str) else cycle['end']
 
-                # בדוק אם ההיבט חופף את הטווח
-                # (התחיל לפני אבל עדיין פעיל, או מתחיל בטווח)
-                if lifecycle['end'] >= start_date and lifecycle['start'] <= end_date:
-                    all_aspects.append({
-                        'natal_planet': natal_planet,
-                        'transit_planet': transit_planet,
-                        'aspect_type': aspect_name,
-                        'max_orb': max_orb,
-                        'lifecycle': {
-                            'start': lifecycle['start'].isoformat(),
-                            'end': lifecycle['end'].isoformat(),
-                            'exact_dates': [
-                                {
-                                    'date': ex['date'].isoformat(),
-                                    'is_retrograde': ex['is_retrograde']
+                    # ✅ בדיקת תקינות: האם ה-cycle שמצאנו אכן מכיל את start_date?
+                    # אם cycle_start הרבה אחרי start_date - פספסנו את ה-cycle האמיתי
+                    if cycle_start_dt > start_date + timedelta(days=1):
+                        # ⚠️ נראה שפספסנו - ה-cycle מתחיל אחרי start_date
+                        # זה יכול לקרות אם lookback_days לא היה מספיק
+                        # במקרה כזה, נשתמש ב-calculate_aspect_lifecycle כגיבוי
+                        try:
+                            lifecycle = calculate_aspect_lifecycle(
+                                natal_lon, transit_planet_id, aspect_angle,
+                                max_orb, start_date
+                            )
+
+                            if lifecycle is not None:
+                                cycle = {
+                                    'start': lifecycle['start'],
+                                    'end': lifecycle['end'],
+                                    'exact_dates': lifecycle['exact_dates'],
+                                    'num_passes': lifecycle['num_passes'],
+                                    'has_retrograde': lifecycle['has_retrograde']
                                 }
-                                for ex in lifecycle['exact_dates']
-                            ],
-                            'num_passes': lifecycle['num_passes'],
-                            'has_retrograde': lifecycle['has_retrograde']
-                        }
-                    })
+                        except:
+                            pass  # אם גם זה נכשל, נשאר עם cycle המקורי
 
-                    # שמור שמצאנו את ההיבט הזה
-                    existing_aspects_set.add(aspect_key)
+                    # ודא שה-cycle רלוונטי (מסתיים אחרי start_date)
+                    if cycle_end_dt >= start_date:
+                        # 🔍 בדיקה נוספת: האם המחזור חופף את הטווח המבוקש?
+                        # (למנוע הוספת מחזורים שמסתיימים לפני start_date או מתחילים אחרי end_date)
+                        if cycle_start_dt <= end_date:  # המחזור רלוונטי לטווח
+                            # המחזור רלוונטי - הוסף אותו
+                            all_aspects.append({
+                                'natal_planet': natal_planet,
+                                'transit_planet': transit_planet,
+                                'aspect_type': aspect_name,
+                                'max_orb': max_orb,
+                                'lifecycle': {
+                                    'start': cycle['start'] if isinstance(cycle['start'], str) else cycle['start'].isoformat(),
+                                    'end': cycle['end'] if isinstance(cycle['end'], str) else cycle['end'].isoformat(),
+                                    'exact_dates': [
+                                        {
+                                            'date': ex['date'] if isinstance(ex['date'], str) else ex['date'].isoformat(),
+                                            'is_retrograde': ex['is_retrograde']
+                                        }
+                                        for ex in cycle['exact_dates']
+                                    ],
+                                    'num_passes': cycle['num_passes'],
+                                    'has_retrograde': cycle['has_retrograde']
+                                }
+                            })
+
+                            # שמור שמצאנו את ההיבט הזה
+                            existing_aspects_set.add(aspect_key)
 
             except Exception as e:
                 import traceback
                 print(f"   ⚠️  שגיאה בחישוב lifecycle ל-{aspect_key}")
                 print(f"       פרטי ההיבט: natal_lon={natal_lon:.2f}°, aspect={aspect_name} ({aspect_angle}°)")
-                print(f"       אורב: {current_orb:.3f}° / {max_orb}°, תאריך: {start_date.date()}")
+                print(f"       תאריך: {start_date.date()}")
                 print(f"       שגיאה: {type(e).__name__}: {e}")
-                # אם רוצים traceback מלא, ניתן להוסיף:
-                # traceback.print_exc()
+                traceback.print_exc()
                 continue
 
         # ========================================
@@ -234,11 +305,11 @@ class TransitCalculator:
                                 'aspect_type': aspect_name,
                                 'max_orb': max_orb,
                                 'lifecycle': {
-                                    'start': cycle['start'].isoformat(),
-                                    'end': cycle['end'].isoformat(),
+                                    'start': cycle['start'] if isinstance(cycle['start'], str) else cycle['start'].isoformat(),
+                                    'end': cycle['end'] if isinstance(cycle['end'], str) else cycle['end'].isoformat(),
                                     'exact_dates': [
                                         {
-                                            'date': ex['date'].isoformat(),
+                                            'date': ex['date'] if isinstance(ex['date'], str) else ex['date'].isoformat(),
                                             'is_retrograde': ex['is_retrograde']
                                         }
                                         for ex in cycle['exact_dates']

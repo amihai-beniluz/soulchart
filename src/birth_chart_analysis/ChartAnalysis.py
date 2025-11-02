@@ -626,7 +626,7 @@ class ChartAnalysis:
             for planet, data in planets_data.items():
                 if data['house'] != h:
                     continue
-                if planet in ['אופק (AC)', 'רום שמיים (MC)']:
+                if planet in ['אופק (AC)', 'רום שמיים (MC)', 'AC', 'MC']:
                     continue
                 planet_sign = data['sign']
                 is_retro = data['is_retrograde']

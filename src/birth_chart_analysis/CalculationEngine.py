@@ -77,6 +77,22 @@ ASPECT_ORBS = {
     'Biquintile': 1.0  # ביקווינטייל
 }
 
+PLANET_AVG_SPEEDS = {
+    swe.SUN: 1.0,
+    swe.MOON: 13.0,
+    swe.MERCURY: 1.2,
+    swe.VENUS: 1.0,
+    swe.MARS: 0.5,
+    swe.JUPITER: 0.08,
+    swe.SATURN: 0.03,
+    swe.URANUS: 0.01,
+    swe.NEPTUNE: 0.006,
+    swe.PLUTO: 0.004,
+    swe.MEAN_NODE: 0.05,
+    swe.CHIRON: 0.06,
+    swe.MEAN_APOG: 0.11
+}
+
 
 # ----------------------------------------------------
 # פונקציות עזר קריטיות
@@ -242,12 +258,16 @@ def calculate_chart_positions(birth_datetime: datetime, lat: float, lon: float) 
 
             sign, house = get_sign_and_house(lon_deg, house_cusps_list)
 
+            # 🔧 FIX: הוסף בדיקת רטרוגרד
+            is_retrograde = speed_deg < 0 if num not in POINT_OBJECTS else False
+
             chart_data['Planets'][name] = {
                 'lon_deg': lon_deg,
                 'lat_deg': lat_deg,
                 'sign': sign,
                 'house': house,
-                'speed_deg': speed_deg
+                'speed_deg': speed_deg,
+                'is_retrograde': is_retrograde  # ← הוסף שורה זו!
             }
 
         except Exception as e:
@@ -263,8 +283,8 @@ def calculate_chart_positions(birth_datetime: datetime, lat: float, lon: float) 
     asc_sign, asc_house = get_sign_and_house(asc_deg, house_cusps_list)
     mc_sign, mc_house = get_sign_and_house(mc_deg, house_cusps_list)
 
-    chart_data['Planets']['AC'] = {'lon_deg': asc_deg, 'sign': asc_sign, 'house': asc_house}
-    chart_data['Planets']['MC'] = {'lon_deg': mc_deg, 'sign': mc_sign, 'house': mc_house}
+    chart_data['Planets']['אופק (AC)'] = {'lon_deg': asc_deg, 'sign': asc_sign, 'house': asc_house}
+    chart_data['Planets']['רום שמיים (MC)'] = {'lon_deg': mc_deg, 'sign': mc_sign, 'house': mc_house}
 
     # 4. חישוב נקודת מזל (Part of Fortune) ידנית
     sun_lon = chart_data['Planets']['שמש']['lon_deg']
@@ -274,10 +294,12 @@ def calculate_chart_positions(birth_datetime: datetime, lat: float, lon: float) 
     part_fortune = (asc_lon + moon_lon - sun_lon) % 360
     sign_fortune, house_fortune = get_sign_and_house(part_fortune, house_cusps_list)
 
-    chart_data['Planets']['נקודת מזל'] = {
+    #  נקודת מזל:
+    chart_data['Planets']['פורטונה'] = {
         'lon_deg': part_fortune,
         'sign': sign_fortune,
-        'house': house_fortune
+        'house': house_fortune,
+        'is_retrograde': False  # ← הוסף
     }
 
     # 5. חישוב היבטים
@@ -386,23 +408,6 @@ def calculate_transit_aspects(natal_planets: dict, transit_planets: dict) -> lis
                     })
 
     return aspects
-
-
-PLANET_AVG_SPEEDS = {
-    swe.SUN: 1.0,
-    swe.MOON: 13.0,
-    swe.MERCURY: 1.2,
-    swe.VENUS: 1.0,
-    swe.MARS: 0.5,
-    swe.JUPITER: 0.08,
-    swe.SATURN: 0.03,
-    swe.URANUS: 0.01,
-    swe.NEPTUNE: 0.006,
-    swe.PLUTO: 0.004,
-    swe.MEAN_NODE: 0.05,
-    swe.CHIRON: 0.06,
-    swe.MEAN_APOG: 0.11
-}
 
 
 def calculate_orb_at_date(natal_lon: float, transit_planet_id: int,
@@ -882,12 +887,10 @@ def calculate_aspect_lifecycle(natal_lon: float, transit_planet_id: int,
     retro_info = get_retrograde_info(transit_planet_id, current_date)
 
     # 2. קבע טווח סריקה
-    # TODO בדוק אם זו הערכה טובה מספיק
     avg_speed = abs(PLANET_AVG_SPEEDS.get(transit_planet_id, 0.5))
     estimated_days = (max_orb * 2) / avg_speed if avg_speed > 0 else 90
 
     # קביעת רזולוציית חיפוש
-    # TODO לברר אם זה לא טווח זמנים מוגזם מדיי וזה גורם לבעיה. שיהיה מדויק עבור כל כוכב.
     if estimated_days < 1:
         search_increment = timedelta(hours=1)
         search_range = int(estimated_days * 24 * 3)
@@ -918,7 +921,6 @@ def calculate_aspect_lifecycle(natal_lon: float, transit_planet_id: int,
         return None
 
     # ✅ שלב 2: חפש את cycle_start - אחורה מה-Exact
-    # TODO לוודא שהצעד לא גדול מדיי עבור אף אחת מהאפשרויות, ושהטווח גדול מספיק תמיד.
     cycle_start = None
     found_start = False
 
@@ -1123,19 +1125,10 @@ def find_next_aspect_cycle(natal_lon: float, transit_planet_id: int,
                            from_date: datetime, to_date: datetime) -> dict:
     """
     מוצא את מחזור החיים הבא של היבט בטווח זמן.
-    שונה מ-calculate_aspect_lifecycle - מחפש קדימה בלבד, לא סביב תאריך.
-    🔧 FIX: הוספת בדיקת אפשרות פיזית והגבלת exact dates
-
-    :param natal_lon: קו אורך נטאלי (0-360)
-    :param transit_planet_id: מזהה כוכב טרנזיט
-    :param aspect_angle: זווית ההיבט (0, 60, 90, 120, 180...)
-    :param max_orb: אורב מקסימלי
-    :param from_date: חפש החל מתאריך זה
-    :param to_date: חפש עד תאריך זה
-    :return: dict עם start, end, exact_dates או None אם לא נמצא
+    🔧 FIX v3.5: תיקון מציאת cycle_end - חיפוש מורחב עד למציאת הסוף האמיתי
     """
 
-    # 🔧 FIX: בדיקה מקדימה - האם ההיבט פיזית אפשרי?
+    # בדיקה מקדימה - האם ההיבט פיזית אפשרי?
     if not is_aspect_physically_possible(transit_planet_id, aspect_angle,
                                          from_date, to_date):
         return None
@@ -1188,12 +1181,13 @@ def find_next_aspect_cycle(natal_lon: float, transit_planet_id: int,
     # שלב 2: חפש תחנות רטרוגרד בטווח צפוי
     # ========================================
     estimated_duration_days = (max_orb * 2) / avg_speed if avg_speed > 0 else 90
-    estimated_end = cycle_start + timedelta(days=estimated_duration_days * 3)
-    estimated_end = min(estimated_end, to_date + timedelta(days=30))
+
+    # 🔧 FIX v3.5: הרחב את טווח החיפוש לרטרוגרדים
+    # כדי לכסות מחזורים ארוכים עם נסיגות
+    estimated_end = cycle_start + timedelta(days=estimated_duration_days * 5)
 
     retrograde_turns = []
     if transit_planet_id not in POINT_OBJECTS:
-        # חפש תחנות מ-cycle_start עד הסוף המוערך
         retrograde_turns = find_retrograde_turns_optimized(
             transit_planet_id,
             cycle_start,
@@ -1202,15 +1196,28 @@ def find_next_aspect_cycle(natal_lon: float, transit_planet_id: int,
 
     # ========================================
     # שלב 3: מצא יציאה מהטווח (cycle_end)
+    # 🔧 FIX v3.5: חיפוש דינמי ללא הגבלה מלאכותית
     # ========================================
     current = cycle_start + scan_step
     cycle_end = None
     prev_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
                                      aspect_angle, cycle_start)
 
-    max_search = min(to_date, cycle_start + timedelta(days=estimated_duration_days * 4))
+    # חישוב גבול חיפוש מקסימלי סביר (למניעת לולאה אינסופית)
+    if avg_speed > 0.001:
+        # חישוב לפי מהירות: כמה זמן לוקח לפלנטה לעבור את ה-orb פעמיים
+        max_cycle_days = (max_orb * 4) / avg_speed
+        # הוסף מרווח בטחון גדול למקרה של נסיגות
+        max_cycle_days *= 3 if retrograde_turns else 1.5
+        # הגבל לערכים סבירים
+        max_cycle_days = min(max_cycle_days, 365 * 10)  # מקסימום 10 שנים
+    else:
+        max_cycle_days = 365 * 10  # ברירת מחדל לפלנטות איטיות מאוד
 
-    while current <= max_search:
+    max_search_date = cycle_start + timedelta(days=max_cycle_days)
+
+    # 🎯 חיפוש cycle_end - ללא תלות ב-to_date!
+    while current <= max_search_date:
         orb = calculate_orb_at_date(natal_lon, transit_planet_id,
                                     aspect_angle, current)
 
@@ -1226,16 +1233,17 @@ def find_next_aspect_cycle(natal_lon: float, transit_planet_id: int,
         prev_orb = orb
         current += scan_step
 
-    # אם לא מצאנו יציאה - הסתיים הטווח שלנו
+    # אם לא מצאנו יציאה - ההיבט ארוך מאוד
+    # במקרה זה, נשתמש בגבול החיפוש
     if cycle_end is None:
-        cycle_end = max_search
+        cycle_end = max_search_date
 
     # ========================================
     # שלב 4: מצא את כל נקודות ה-Exact
     # ========================================
     exact_dates = []
 
-    # 🔧 FIX: סף דינמי למניעת duplicates
+    # סף דינמי למניעת duplicates
     if avg_speed > 5:  # ירח
         duplicate_threshold_hours = 2
     elif avg_speed > 0.5:  # שמש, מרקורי, ונוס, מאדים
@@ -1282,14 +1290,14 @@ def find_next_aspect_cycle(natal_lon: float, transit_planet_id: int,
             )
 
             if exact:
-                # וודא שבאמת בתוך האורב
+                # ווידוא שבאמת בתוך האורב
                 exact_orb = calculate_orb_at_date(natal_lon, transit_planet_id,
                                                   aspect_angle, exact)
 
-                if exact_orb <= max_orb * 0.8:  # 🔧 FIX v3.6: תיקון נוסף - find_exact_date_absolute כבר מבטיח אורב קטן
+                if exact_orb <= max_orb:
                     is_retro = get_planet_speed_at_date(transit_planet_id, exact) < 0
 
-                    # 🔧 FIX: בדוק כפילויות עם סף דינמי
+                    # בדוק כפילויות עם סף דינמי
                     is_duplicate = False
                     for ex in exact_dates:
                         time_diff_hours = abs((ex['date'] - exact).total_seconds()) / 3600
@@ -1301,10 +1309,10 @@ def find_next_aspect_cycle(natal_lon: float, transit_planet_id: int,
                         exact_dates.append({
                             'date': exact,
                             'is_retrograde': is_retro,
-                            'actual_orb': round(exact_orb, 4)  # כבר חישבנו את exact_orb למעלה
+                            'actual_orb': round(exact_orb, 4)
                         })
 
-    # 🔧 FIX: הגבלת מספר exact dates ל-3 מקסימום
+    # הגבלת מספר exact dates למקסימום 3
     if len(exact_dates) > 3:
         reference_date = cycle_start + (cycle_end - cycle_start) / 2
         exact_dates = sorted(exact_dates,

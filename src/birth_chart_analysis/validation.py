@@ -4,10 +4,14 @@ Improved Verification script for exact transit dates
 ====================================================
 Improvements:
 - Better parsing of aspect headers
-- Handles both "שיא ההיבט" and "שיאים נוספים"
+- Handles both "שין הדייקט" and "שיאיין נוספיי"
 - More accurate planet and aspect name detection
 - Better error categorization
+- NEW: Validates start/end dates against maximum orbs
 """
+
+# TODO להבין למה מספר ההיבטים שנמצאים קטן בהרבה ממה שמופיע בדוח
+# TODO לטפל בשגיאה של נפטון חצי ריבוע ירח במעבר
 
 import re
 import os
@@ -42,7 +46,7 @@ PLANET_NAMES_HE = {
     'אורנוס': 'Uranus',
     'נפטון': 'Neptune',
     'פלוטו': 'Pluto',
-    'ראש דרקון': 'NorthNode',
+    'ראש הרקון': 'NorthNode',
     'כירון': 'Chiron',
     'לילית': 'Lilith',
     'AC': 'AC',
@@ -58,7 +62,7 @@ ASPECT_NAMES_HE = {
     'סקסטייל': 'Sextile',
     'ריבוע': 'Square',
     'משולש': 'Trine',
-    'טריגון': 'Trine',
+    'טריבון': 'Trine',
     'מול': 'Opposition',
     'אופוזיציה': 'Opposition',
 
@@ -88,6 +92,24 @@ ASPECTS = {
     'Sesquiquadrate': 135,
     'Quintile': 72,
     'Biquintile': 144
+}
+
+# Maximum allowed orbs for each aspect
+ASPECT_ORBS = {
+    # היבטים מז'וריים - חזקים:
+    'Conjunction': 10.0,  # היצמדות
+    'Opposition': 10.0,  # ניגוד
+    'Square': 9.0,  # ריבוע
+    'Trine': 8.0,  # טרין
+    'Sextile': 6.0,  # סקסטייל
+
+    # היבטים משניים - חלשים:
+    'Inconjunct': 2.5,  # קווינקונקס
+    'SemiSquare': 2.0,  # סמי-ריבוע
+    'Sesquiquadrate': 2.0,  # סקווירפיינד
+    'SemiSextile': 1.5,  # סמי-סקסטייל
+    'Quintile': 1.0,  # קווינטייל
+    'Biquintile': 1.0  # ביקווינטייל
 }
 
 
@@ -129,6 +151,7 @@ def calculate_orb(natal_lon, transit_lon, aspect_angle):
 def parse_text_file_improved(file_path):
     """
     Improved parsing of Hebrew text format transit file
+    Extracts both exact dates AND start/end dates
     """
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
@@ -177,16 +200,18 @@ def parse_text_file_improved(file_path):
                             transit_planet = PLANET_NAMES_HE[he_name]
                             break
 
-            # If we successfully parsed the header, look for exact dates
+            # If we successfully parsed the header, look for dates
             if natal_planet and transit_planet and aspect_name:
                 aspect_data = {
                     'natal_planet': natal_planet,
                     'aspect_type': aspect_name,
                     'transit_planet': transit_planet,
-                    'exact_dates': []
+                    'exact_dates': [],
+                    'start_date': None,
+                    'end_date': None
                 }
 
-                # Look ahead for exact dates
+                # Look ahead for dates
                 j = i + 1
                 while j < len(lines) and j < i + 20:  # Look ahead max 20 lines
                     next_line = lines[j].strip()
@@ -196,12 +221,22 @@ def parse_text_file_improved(file_path):
                             next_line.startswith('---'):
                         break
 
-                    # Look for "שיא ההיבט:" or dates in "שיאים נוספים:"
-                    # שינוי: חפש תאריך רק אם הוא מופיע אחרי 'שיא ההיבט' או 'שיאים נוספים'
-                    date_pattern_str = r'(?:שיא ההיבט:|שיאים נוספים:).*?(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})'
-                    date_match = re.search(date_pattern_str, next_line)
-                    if date_match:
-                        day, month, year, hour, minute = date_match.groups()
+                    # Look for activity period: "תקופת פעילות: DD.MM.YYYY HH:MM - DD.MM.YYYY HH:MM"
+                    period_match = re.search(
+                        r'תקופת פעילות:\s*(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})\s*-\s*(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})',
+                        next_line)
+                    if period_match:
+                        # Start date
+                        day1, month1, year1, hour1, minute1 = period_match.groups()[:5]
+                        aspect_data['start_date'] = f"{year1}-{month1}-{day1} {hour1}:{minute1}:00"
+                        # End date
+                        day2, month2, year2, hour2, minute2 = period_match.groups()[5:]
+                        aspect_data['end_date'] = f"{year2}-{month2}-{day2} {hour2}:{minute2}:00"
+
+                    # Look for exact date: "שיא ההיבט: DD.MM.YYYY HH:MM"
+                    exact_match = re.search(r'שיא ההיבט:\s*(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})', next_line)
+                    if exact_match:
+                        day, month, year, hour, minute = exact_match.groups()
                         date_str = f"{year}-{month}-{day} {hour}:{minute}:00"
                         is_retro = '⟲' in next_line
 
@@ -212,7 +247,8 @@ def parse_text_file_improved(file_path):
 
                     j += 1
 
-                if aspect_data['exact_dates']:
+                # Only add if we found any dates
+                if aspect_data['exact_dates'] or aspect_data['start_date'] or aspect_data['end_date']:
                     aspects.append(aspect_data)
 
         i += 1
@@ -224,16 +260,6 @@ def verify_exact_dates(file_path, natal_positions):
     """Verify all exact dates with improved error reporting"""
 
     aspects = parse_text_file_improved(file_path)
-
-    print("\n🔍 DEBUG - Looking for Moon Trine Sun:")
-    for aspect in aspects:
-        if (aspect['natal_planet'] == 'Sun' and
-                aspect['transit_planet'] == 'Moon' and
-                aspect['aspect_type'] == 'Trine'):
-            print(f"  Found: {aspect['natal_planet']} {aspect['aspect_type']} {aspect['transit_planet']}")
-            print(f"  Exact dates found: {len(aspect['exact_dates'])}")
-            for ex in aspect['exact_dates']:
-                print(f"    - {ex['date']} (retro: {ex['is_retrograde']})")
 
     print(f"✓ Total aspects found: {len(aspects)}")
 
@@ -299,23 +325,27 @@ def verify_exact_dates(file_path, natal_positions):
 
     # Print summary
     print(f"\n{'=' * 70}")
-    print(f"VALIDATION RESULTS")
+    print(f"VALIDATION RESULTS - EXACT DATES")
     print(f"{'=' * 70}")
     print(f"Total aspects found: {len(aspects)}")
     print(f"Total exact dates verified: {verified}")
     print(f"Skipped (AC/MC/PartOfFortune): {skipped}")
 
-    print(f"\n📊 ACCURACY BREAKDOWN:")
-    print(f"  ⭐ Perfect (< 0.1°):     {len(perfect):4d} ({100 * len(perfect) / verified:.1f}%)")
-    print(f"  ✓  Good (0.1° - 0.5°):   {len(good):4d} ({100 * len(good) / verified:.1f}%)")
-    print(f"  ⚠️  Minor (0.5° - 2°):    {len(minor_errors):4d} ({100 * len(minor_errors) / verified:.1f}%)")
-    print(f"  ⚠️  Moderate (2° - 10°):  {len(moderate_errors):4d} ({100 * len(moderate_errors) / verified:.1f}%)")
-    print(f"  ❌ Major (10° - 30°):    {len(major_errors):4d} ({100 * len(major_errors) / verified:.1f}%)")
-    print(f"  ❌ Wrong aspect (>30°):  {len(wrong_aspect_errors):4d} ({100 * len(wrong_aspect_errors) / verified:.1f}%)")
+    if verified > 0:
+        print(f"\n📊 ACCURACY BREAKDOWN:")
+        print(f"  ⭐ Perfect (< 0.1°):     {len(perfect):4d} ({100 * len(perfect) / verified:.1f}%)")
+        print(f"  ✓  Good (0.1° - 0.5°):   {len(good):4d} ({100 * len(good) / verified:.1f}%)")
+        print(f"  ⚠️  Minor (0.5° - 2°):    {len(minor_errors):4d} ({100 * len(minor_errors) / verified:.1f}%)")
+        print(f"  ⚠️  Moderate (2° - 10°):  {len(moderate_errors):4d} ({100 * len(moderate_errors) / verified:.1f}%)")
+        print(f"  ❌ Major (10° - 30°):    {len(major_errors):4d} ({100 * len(major_errors) / verified:.1f}%)")
+        print(
+            f"  ❌ Wrong aspect (>30°):  {len(wrong_aspect_errors):4d} ({100 * len(wrong_aspect_errors) / verified:.1f}%)")
 
-    acceptable = len(perfect) + len(good)
-    print(f"\n✅ Acceptable accuracy (< 0.5°): {100 * acceptable / verified:.1f}%")
-    print(f"❌ Needs improvement (≥ 0.5°): {100 * len(errors) / verified:.1f}%")
+        acceptable = len(perfect) + len(good)
+        print(f"\n✅ Acceptable accuracy (< 0.5°): {100 * acceptable / verified:.1f}%")
+        print(f"❌ Needs improvement (≥ 0.5°): {100 * len(errors) / verified:.1f}%")
+    else:
+        print("\n⚠️ No exact dates found to verify!")
 
     # Show worst errors
     if wrong_aspect_errors:
@@ -339,7 +369,6 @@ def verify_exact_dates(file_path, natal_positions):
             print(f"   {err['aspect']}{retro}")
             print(f"      Date: {err['date'][:16]} | Orb: {err['orb']:.2f}°")
 
-
     return {
         'total': verified,
         'perfect': len(perfect),
@@ -350,6 +379,183 @@ def verify_exact_dates(file_path, natal_positions):
             'moderate': len(moderate_errors),
             'major': len(major_errors),
             'wrong': len(wrong_aspect_errors)
+        }
+    }
+
+
+def verify_start_end_dates(file_path, natal_positions):
+    """
+    Verify that start and end dates match exactly the maximum allowed orb
+    Start date: orb should equal max_orb (entering the aspect)
+    End date: orb should equal max_orb (leaving the aspect)
+    """
+    aspects = parse_text_file_improved(file_path)
+
+    # Count aspects with boundaries
+    aspects_with_boundaries = [a for a in aspects if a['start_date'] or a['end_date']]
+    print(f"✓ Total aspects with start/end dates: {len(aspects_with_boundaries)}\n")
+
+    verified_start = 0
+    verified_end = 0
+    skipped = 0
+
+    # Track errors by tolerance
+    perfect_start = []  # |orb - max_orb| < 0.1°
+    good_start = []  # 0.1° < |orb - max_orb| < 0.5°
+    minor_start = []  # 0.5° < |orb - max_orb| < 1°
+    major_start = []  # |orb - max_orb| >= 1°
+
+    perfect_end = []
+    good_end = []
+    minor_end = []
+    major_end = []
+
+    for aspect in aspects:
+        natal_planet = aspect['natal_planet']
+        transit_planet = aspect['transit_planet']
+        aspect_type = aspect['aspect_type']
+
+        transit_id = PLANET_IDS.get(transit_planet)
+        aspect_angle = ASPECTS.get(aspect_type)
+        max_orb = ASPECT_ORBS.get(aspect_type)
+        natal_lon = natal_positions.get(natal_planet)
+
+        # Skip if we don't have all required data
+        if not all([natal_lon is not None, transit_id is not None,
+                    aspect_angle is not None, max_orb is not None]):
+            if aspect['start_date']:
+                skipped += 1
+            if aspect['end_date']:
+                skipped += 1
+            continue
+
+        # Check start date
+        if aspect['start_date']:
+            start_dt = datetime.strptime(aspect['start_date'], '%Y-%m-%d %H:%M:%S')
+            transit_lon = get_planet_position(transit_id, start_dt)
+
+            if transit_lon is not None:
+                orb = calculate_orb(natal_lon, transit_lon, aspect_angle)
+                diff_from_max = abs(orb - max_orb)
+                verified_start += 1
+
+                error_info = {
+                    'aspect': f"{natal_planet} {aspect_type} {transit_planet}",
+                    'date': aspect['start_date'],
+                    'actual_orb': orb,
+                    'expected_orb': max_orb,
+                    'difference': diff_from_max
+                }
+
+                if diff_from_max < 0.1:
+                    perfect_start.append(error_info)
+                elif diff_from_max < 0.5:
+                    good_start.append(error_info)
+                elif diff_from_max < 1.0:
+                    minor_start.append(error_info)
+                else:
+                    major_start.append(error_info)
+
+        # Check end date
+        if aspect['end_date']:
+            end_dt = datetime.strptime(aspect['end_date'], '%Y-%m-%d %H:%M:%S')
+            transit_lon = get_planet_position(transit_id, end_dt)
+
+            if transit_lon is not None:
+                orb = calculate_orb(natal_lon, transit_lon, aspect_angle)
+                diff_from_max = abs(orb - max_orb)
+                verified_end += 1
+
+                error_info = {
+                    'aspect': f"{natal_planet} {aspect_type} {transit_planet}",
+                    'date': aspect['end_date'],
+                    'actual_orb': orb,
+                    'expected_orb': max_orb,
+                    'difference': diff_from_max
+                }
+
+                if diff_from_max < 0.1:
+                    perfect_end.append(error_info)
+                elif diff_from_max < 0.5:
+                    good_end.append(error_info)
+                elif diff_from_max < 1.0:
+                    minor_end.append(error_info)
+                else:
+                    major_end.append(error_info)
+
+    total_verified = verified_start + verified_end
+
+    # Print results
+    print(f"Total boundary dates verified: {total_verified}")
+    print(f"  - Start dates: {verified_start}")
+    print(f"  - End dates: {verified_end}")
+    print(f"Skipped (AC/MC/PartOfFortune): {skipped}\n")
+
+    # Calculate totals
+    total_perfect = len(perfect_start) + len(perfect_end)
+    total_good = len(good_start) + len(good_end)
+    acceptable = total_perfect + total_good
+
+    if total_verified > 0:
+        print("📊 START DATES ACCURACY:")
+        if verified_start > 0:
+            print(
+                f"  ⭐ Perfect (< 0.1°):    {len(perfect_start):4d} ({100 * len(perfect_start) / verified_start:.1f}%)")
+            print(f"  ✓  Good (0.1° - 0.5°):  {len(good_start):4d} ({100 * len(good_start) / verified_start:.1f}%)")
+            print(f"  ⚠️  Minor (0.5° - 1°):   {len(minor_start):4d} ({100 * len(minor_start) / verified_start:.1f}%)")
+            print(f"  ❌ Major (≥ 1°):        {len(major_start):4d} ({100 * len(major_start) / verified_start:.1f}%)")
+        else:
+            print(f"  No start dates to verify")
+
+        print("\n📊 END DATES ACCURACY:")
+        if verified_end > 0:
+            print(f"  ⭐ Perfect (< 0.1°):    {len(perfect_end):4d} ({100 * len(perfect_end) / verified_end:.1f}%)")
+            print(f"  ✓  Good (0.1° - 0.5°):  {len(good_end):4d} ({100 * len(good_end) / verified_end:.1f}%)")
+            print(f"  ⚠️  Minor (0.5° - 1°):   {len(minor_end):4d} ({100 * len(minor_end) / verified_end:.1f}%)")
+            print(f"  ❌ Major (≥ 1°):        {len(major_end):4d} ({100 * len(major_end) / verified_end:.1f}%)")
+        else:
+            print(f"  No end dates to verify")
+
+        # Overall accuracy
+        print(f"\n✅ Overall acceptable accuracy (< 0.5°): {100 * acceptable / total_verified:.1f}%")
+
+        # Show worst errors for start dates
+        if major_start:
+            print(f"\n❌ MAJOR START DATE ERRORS (showing first 5):")
+            for err in sorted(major_start, key=lambda x: -x['difference'])[:5]:
+                print(f"   {err['aspect']}")
+                print(f"      Date: {err['date'][:16]}")
+                print(
+                    f"      Expected orb: {err['expected_orb']:.2f}° | Actual: {err['actual_orb']:.2f}° | Diff: {err['difference']:.2f}°")
+
+        # Show worst errors for end dates
+        if major_end:
+            print(f"\n❌ MAJOR END DATE ERRORS (showing first 5):")
+            for err in sorted(major_end, key=lambda x: -x['difference'])[:5]:
+                print(f"   {err['aspect']}")
+                print(f"      Date: {err['date'][:16]}")
+                print(
+                    f"      Expected orb: {err['expected_orb']:.2f}° | Actual: {err['actual_orb']:.2f}° | Diff: {err['difference']:.2f}°")
+    else:
+        print("\n⚠️ No boundary dates found to verify!")
+
+    return {
+        'total': total_verified,
+        'perfect': total_perfect,
+        'good': total_good,
+        'start_dates': {
+            'total': verified_start,
+            'perfect': len(perfect_start),
+            'good': len(good_start),
+            'minor': len(minor_start),
+            'major': len(major_start)
+        },
+        'end_dates': {
+            'total': verified_end,
+            'perfect': len(perfect_end),
+            'good': len(good_end),
+            'minor': len(minor_end),
+            'major': len(major_end)
         }
     }
 
@@ -372,5 +578,43 @@ if __name__ == "__main__":
             # 🔧 FIX: השתמש ב-UTC datetime במקום ב-naive datetime
             natal_positions[planet_name] = get_planet_position(planet_id, utc_dt)
 
-    file_path = os.path.join(FILE_DIR, 'future_transits_עמיחי_20251102_0056.txt')
-    results = verify_exact_dates(file_path, natal_positions)
+    file_path = os.path.join(FILE_DIR, 'future_transits_עמיחי_20251102_0326_positions.txt')
+
+    # Verify exact dates
+    print("=" * 70)
+    print("PART 1: VERIFYING EXACT DATES")
+    print("=" * 70)
+
+    # Check if file exists
+    if not os.path.exists(file_path):
+        print(f"❌ ERROR: File not found: {file_path}")
+        print(f"Looking in directory: {FILE_DIR}")
+        if os.path.exists(FILE_DIR):
+            print("\nFiles in directory:")
+            for f in os.listdir(FILE_DIR):
+                print(f"  - {f}")
+        exit(1)
+
+    exact_results = verify_exact_dates(file_path, natal_positions)
+
+    # Verify start/end dates
+    print("\n\n" + "=" * 70)
+    print("PART 2: VERIFYING START/END DATES (ORB ACCURACY)")
+    print("=" * 70)
+    boundary_results = verify_start_end_dates(file_path, natal_positions)
+
+    # Combined summary
+    print("\n\n" + "=" * 70)
+    print("COMBINED VALIDATION SUMMARY")
+    print("=" * 70)
+    if exact_results['total'] > 0:
+        print(
+            f"Exact dates - Acceptable accuracy: {100 * (exact_results['perfect'] + exact_results['good']) / exact_results['total']:.1f}%")
+    else:
+        print(f"Exact dates - No data to validate")
+
+    if boundary_results['total'] > 0:
+        print(
+            f"Start/End dates - Acceptable accuracy: {100 * (boundary_results['perfect'] + boundary_results['good']) / boundary_results['total']:.1f}%")
+    else:
+        print(f"Start/End dates - No data to validate")
