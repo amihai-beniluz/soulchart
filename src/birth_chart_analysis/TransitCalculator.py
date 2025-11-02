@@ -143,10 +143,10 @@ class TransitCalculator:
                     # שבתאי: 360° / 0.03 = ~12000 ימים (29 שנים)
                     # אורב גדול + תנועה איטית = טווח ארוך
                     lookback_days = min(
-                        (max_orb * 3) / avg_speed,
+                        (max_orb * 6) / avg_speed,
                         orbital_period_days / 4
                     )
-                    lookback_days = min(lookback_days, 365 * 2.5)  # הגבלה: שנתיים וחצי
+                    lookback_days = min(lookback_days, 365 * 3)  # הגבלה: 3 שנים
 
                 else:  # אורנוס, נפטון, פלוטו - איטיים מאוד
                     # אורנוס: 84 שנים, נפטון: 165 שנים, פלוטו: 248 שנים

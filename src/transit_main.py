@@ -94,6 +94,7 @@ def get_mode_selection():
 
 def run_current_transits(user: User, current_location: tuple, is_interpreted: bool = True):
     """מצב 1: ניתוח טרנזיטים נוכחיים"""
+    # TODO בשתי סוגי ההדפסות (עם או בלי פרשנות) יש היבטים ללא שיא, לוודא שכל השיפורים שהכנסנו למוד 2 נכנסו גם לפה
     print("\n--- ביצוע ניתוח מעברים נוכחיים ---\n")
     try:
         chart_analysis = ChartAnalysis(user)
@@ -337,8 +338,9 @@ def format_future_transits_report(result: dict, is_time_sorted: bool = False, is
                 'שמש': 'Sun', 'ירח': 'Moon', 'מרקורי': 'Mercury',
                 'ונוס': 'Venus', 'מאדים': 'Mars', 'צדק': 'Jupiter',
                 'שבתאי': 'Saturn', 'אורנוס': 'Uranus', 'נפטון': 'Neptune',
-                'פלוטו': 'Pluto', 'ראש הרקון': 'North Node', 'לילית': 'Lilith',
-                'כירון': 'Chiron'
+                'פלוטו': 'Pluto', 'ראש דרקון': 'North Node', 'לילית': 'Lilith',
+                'כירון': 'Chiron', 'אופק (AC)': 'AC', 'רום שמיים (MC)': 'MC',
+                'פורטונה': 'Fortune', 'ורטקס': 'Vertex'
             }
 
             p1_eng = PLANET_NAMES_ENG.get(aspect['natal_planet'], aspect['natal_planet'])
@@ -440,10 +442,8 @@ def main():
 
     # הרצה לפי הבחירה
     if mode == '1':
-        # TODO בשתי סוגי ההדפסות (עם או בלי פרשנות) יש היבטים ללא שיא, לוודא שכל השיפורים שהכנסנו למוד 2 נכנסו גם לפה
         run_current_transits(user, current_location, is_interpreted)
     elif mode == '2':
-        # TODO פורטונה ראש דרקון AC MC :להבין למה לא נמצאות הפרשנויות של
         run_future_transits(user, current_location, is_interpreted)
 
     print("\n🎉 הסתיים בהצלחה!")

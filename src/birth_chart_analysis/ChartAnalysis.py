@@ -731,7 +731,6 @@ class ChartAnalysis:
 
         return report
 
-    # TODO: להוסיף תצוגת לוח שנה שבה מסומן כל היבט.
     def _calculate_transit_progress(self, aspect: dict, lifecycle: dict = None) -> str:
         """
         מחשב את מחוון ההתקדמות הלינארי של היבט מעבר בתוך האורב.

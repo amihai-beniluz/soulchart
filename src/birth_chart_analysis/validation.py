@@ -10,9 +10,6 @@ Improvements:
 - NEW: Validates start/end dates against maximum orbs
 """
 
-# TODO להבין למה מספר ההיבטים שנמצאים קטן בהרבה ממה שמופיע בדוח
-# TODO לטפל בשגיאה של נפטון חצי ריבוע ירח במעבר
-
 import re
 import os
 from datetime import datetime
@@ -46,11 +43,14 @@ PLANET_NAMES_HE = {
     'אורנוס': 'Uranus',
     'נפטון': 'Neptune',
     'פלוטו': 'Pluto',
-    'ראש הרקון': 'NorthNode',
+    'ראש דרקון': 'NorthNode',  # 🔧 FIX: was 'ראש הרקון' (typo!)
     'כירון': 'Chiron',
     'לילית': 'Lilith',
+    'אופק (AC)': 'AC',  # 🔧 FIX: added full name
     'AC': 'AC',
+    'רום שמיים (MC)': 'MC',  # 🔧 FIX: added full name
     'MC': 'MC',
+    'פורטונה': 'PartOfFortune',  # 🔧 FIX: added alternative name
     'נקודת מזל': 'PartOfFortune'
 }
 
@@ -146,6 +146,45 @@ def calculate_orb(natal_lon, transit_lon, aspect_angle):
     diff = min(diff, 360 - diff)
     orb = abs(diff - aspect_angle)
     return orb
+
+
+def is_local_minimum(exact_dt, natal_lon, transit_id, aspect_angle, check_hours=[12, 24]):
+    """
+    Check if the given date is a local minimum of orb.
+
+    A date is a local minimum if its orb is lower than all surrounding dates
+    within check_hours range.
+
+    :param exact_dt: datetime to check
+    :param natal_lon: natal planet longitude
+    :param transit_id: transiting planet ID
+    :param aspect_angle: aspect angle (0, 60, 90, etc.)
+    :param check_hours: list of hour offsets to check (both +/-)
+    :return: True if local minimum, False otherwise
+    """
+    from datetime import timedelta
+
+    orb_at_date = None
+    transit_lon = get_planet_position(transit_id, exact_dt)
+    if transit_lon is not None:
+        orb_at_date = calculate_orb(natal_lon, transit_lon, aspect_angle)
+    else:
+        return False
+
+    # Check surrounding dates
+    for offset_hours in check_hours:
+        for sign in [-1, 1]:
+            test_dt = exact_dt + timedelta(hours=sign * offset_hours)
+            test_transit_lon = get_planet_position(transit_id, test_dt)
+
+            if test_transit_lon is not None:
+                test_orb = calculate_orb(natal_lon, test_transit_lon, aspect_angle)
+
+                # If we found a lower orb nearby, this is NOT a local minimum
+                if test_orb < orb_at_date:
+                    return False
+
+    return True  # Passed all checks - it's a local minimum!
 
 
 def parse_text_file_improved(file_path):
@@ -245,6 +284,20 @@ def parse_text_file_improved(file_path):
                             'is_retrograde': is_retro
                         })
 
+                    # Look for additional exact dates: "שיאים נוספים: DD.MM.YYYY HH:MM, DD.MM.YYYY HH:MM, ..."
+                    if 'שיאים נוספים:' in next_line:
+                        # Extract all dates from this line
+                        additional_dates = re.findall(r'(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})(\s*⟲)?', next_line)
+                        for match in additional_dates:
+                            day, month, year, hour, minute, retro_marker = match
+                            date_str = f"{year}-{month}-{day} {hour}:{minute}:00"
+                            is_retro = bool(retro_marker.strip()) if retro_marker else False
+
+                            aspect_data['exact_dates'].append({
+                                'date': date_str,
+                                'is_retrograde': is_retro
+                            })
+
                     j += 1
 
                 # Only add if we found any dates
@@ -274,9 +327,11 @@ def verify_exact_dates(file_path, natal_positions):
     perfect = []  # orb < 0.1°
     good = []  # 0.1° < orb < 0.5°
     minor_errors = []  # 0.5° < orb < 2°
-    moderate_errors = []  # 2° < orb < 10°
+    moderate_local_min = []  # 2° < orb < 10° BUT is local minimum (NOT an error!)
+    moderate_errors = []  # 2° < orb < 10° AND not local minimum
     major_errors = []  # 10° < orb < 30°
     wrong_aspect_errors = []  # orb > 30° (probably wrong aspect detection)
+    not_local_minimum = []  # Any orb but not a local minimum (real error!)
 
     for aspect in aspects:
         natal_planet = aspect['natal_planet']
@@ -298,15 +353,23 @@ def verify_exact_dates(file_path, natal_positions):
             orb = calculate_orb(natal_lon, transit_lon, aspect_angle)
             verified += 1
 
+            # Check if this is a local minimum
+            is_local_min = is_local_minimum(exact_dt, natal_lon, transit_id, aspect_angle)
+
             error_info = {
                 'aspect': f"{natal_planet} {aspect_type} {transit_planet}",
                 'date': exact['date'],
                 'orb': orb,
-                'is_retro': exact['is_retrograde']
+                'is_retro': exact['is_retrograde'],
+                'is_local_min': is_local_min
             }
 
-            # Categorize by orb size
-            if orb < 0.1:
+            # Categorize by orb size AND local minimum status
+            if not is_local_min:
+                # NOT a local minimum - this is a real error!
+                not_local_minimum.append(error_info)
+                errors.append(error_info)
+            elif orb < 0.1:
                 perfect.append(error_info)
             elif orb < 0.5:
                 good.append(error_info)
@@ -314,8 +377,15 @@ def verify_exact_dates(file_path, natal_positions):
                 minor_errors.append(error_info)
                 errors.append(error_info)
             elif orb < 10:
-                moderate_errors.append(error_info)
-                errors.append(error_info)
+                # Check if within max_orb for this aspect
+                max_orb = ASPECT_ORBS.get(aspect_type, 10.0)
+                if orb <= max_orb:
+                    # Local minimum AND within max_orb - this is ACCEPTABLE!
+                    moderate_local_min.append(error_info)
+                else:
+                    # Local minimum but outside max_orb
+                    moderate_errors.append(error_info)
+                    errors.append(error_info)
             elif orb < 30:
                 major_errors.append(error_info)
                 errors.append(error_info)
@@ -333,17 +403,35 @@ def verify_exact_dates(file_path, natal_positions):
 
     if verified > 0:
         print(f"\n📊 ACCURACY BREAKDOWN:")
-        print(f"  ⭐ Perfect (< 0.1°):     {len(perfect):4d} ({100 * len(perfect) / verified:.1f}%)")
-        print(f"  ✓  Good (0.1° - 0.5°):   {len(good):4d} ({100 * len(good) / verified:.1f}%)")
-        print(f"  ⚠️  Minor (0.5° - 2°):    {len(minor_errors):4d} ({100 * len(minor_errors) / verified:.1f}%)")
-        print(f"  ⚠️  Moderate (2° - 10°):  {len(moderate_errors):4d} ({100 * len(moderate_errors) / verified:.1f}%)")
-        print(f"  ❌ Major (10° - 30°):    {len(major_errors):4d} ({100 * len(major_errors) / verified:.1f}%)")
+        print(f"  ⭐ Perfect (< 0.1°):              {len(perfect):4d} ({100 * len(perfect) / verified:.1f}%)")
+        print(f"  ✓  Good (0.1° - 0.5°):            {len(good):4d} ({100 * len(good) / verified:.1f}%)")
         print(
-            f"  ❌ Wrong aspect (>30°):  {len(wrong_aspect_errors):4d} ({100 * len(wrong_aspect_errors) / verified:.1f}%)")
+            f"  ⚠️  Minor (0.5° - 2°):             {len(minor_errors):4d} ({100 * len(minor_errors) / verified:.1f}%)")
+        print(
+            f"  ✅ Moderate LOCAL MIN (2° - 10°): {len(moderate_local_min):4d} ({100 * len(moderate_local_min) / verified:.1f}%)")
+        print(
+            f"  ⚠️  Moderate (2° - 10°):           {len(moderate_errors):4d} ({100 * len(moderate_errors) / verified:.1f}%)")
+        print(f"  ❌ Major (10° - 30°):             {len(major_errors):4d} ({100 * len(major_errors) / verified:.1f}%)")
+        print(
+            f"  ❌ Wrong aspect (>30°):           {len(wrong_aspect_errors):4d} ({100 * len(wrong_aspect_errors) / verified:.1f}%)")
+        print(
+            f"  🔴 NOT local minimum:             {len(not_local_minimum):4d} ({100 * len(not_local_minimum) / verified:.1f}%)")
 
-        acceptable = len(perfect) + len(good)
-        print(f"\n✅ Acceptable accuracy (< 0.5°): {100 * acceptable / verified:.1f}%")
-        print(f"❌ Needs improvement (≥ 0.5°): {100 * len(errors) / verified:.1f}%")
+        acceptable = len(perfect) + len(good) + len(moderate_local_min)
+
+        # 🔧 FIX: חישוב נכון של שגיאות אמיתיות
+        # True errors = רק NOT local minimum (שגיאות חמורות)
+        # Minor errors = כמעט מושלם אבל לא ממש (0.5-2°)
+        critical_errors = len(not_local_minimum) + len(moderate_errors) + len(major_errors) + len(wrong_aspect_errors)
+
+        print(f"\n✅ Acceptable (< 0.5° OR local min in range): {100 * acceptable / verified:.1f}%")
+        print(f"\n📊 ERRORS BREAKDOWN:")
+        print(
+            f"  ⚠️  Minor (0.5-2°, local min): {len(minor_errors):4d} ({100 * len(minor_errors) / verified:.1f}%) - Almost perfect")
+        print(
+            f"  🔴 Critical (NOT local min):  {critical_errors:4d} ({100 * critical_errors / verified:.1f}%) - Real errors")
+        if critical_errors == 0:
+            print(f"  ✨ Perfect! All exact dates are true local minima!")
     else:
         print("\n⚠️ No exact dates found to verify!")
 
@@ -578,7 +666,7 @@ if __name__ == "__main__":
             # 🔧 FIX: השתמש ב-UTC datetime במקום ב-naive datetime
             natal_positions[planet_name] = get_planet_position(planet_id, utc_dt)
 
-    file_path = os.path.join(FILE_DIR, 'future_transits_עמיחי_20251102_0326_positions.txt')
+    file_path = os.path.join(FILE_DIR, 'future_transits_עמיחי_20251102_1551_positions.txt')
 
     # Verify exact dates
     print("=" * 70)
