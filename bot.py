@@ -23,6 +23,7 @@ from src.birth_chart_analysis.BirthChartDrawer import draw_and_save_chart, draw_
 from src.birth_chart_analysis.CalculationEngine import calculate_chart_positions, calculate_current_positions
 from src.birth_chart_analysis.TransitCalculator import TransitCalculator
 from src.user import User
+import json
 
 # נקה ANSI colors
 ANSI_RE = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
@@ -60,6 +61,24 @@ TRANSITS_DIR = os.path.join(OUTPUT_DIR, 'transits')
 os.makedirs(NAMES_DIR, exist_ok=True)
 os.makedirs(CHARTS_DIR, exist_ok=True)
 os.makedirs(TRANSITS_DIR, exist_ok=True)
+
+USER_DATA_DIR = os.path.join(BASE_DIR, 'user_data')
+os.makedirs(USER_DATA_DIR, exist_ok=True)
+
+
+def save_user_input(user_id, data_dict):
+    """שומר קלטים של משתמש"""
+    try:
+        file_path = os.path.join(USER_DATA_DIR, f'user_{user_id}.json')
+        save_data = {
+            'user_id': user_id,
+            'timestamp': datetime.now().isoformat(),
+            'inputs': data_dict
+        }
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(save_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving user input: {e}")
 
 
 def get_main_menu_keyboard(user_id: int = None):
@@ -185,37 +204,67 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return CHART_NAME
 
+
     elif query.data == "transits":
+
         # בדיקה אם יש פרופיל שמור
+
         if user_id in user_profiles:
+
             profile = user_profiles[user_id]
-            # שמירה בcontext
+
+            # ✅ תיקון: שמירה מחדש בcontext (למקרה שנוקה)
+
             context.user_data['transit_name'] = profile['name']
+
             context.user_data['transit_birthdate'] = profile['birthdate']
+
             context.user_data['transit_birthtime'] = profile['birthtime']
+
             context.user_data['transit_birth_location'] = profile['birth_location']
 
             # קפיצה ישירות למיקום נוכחי
+
             await query.edit_message_text(
-                f"🌍 *מפת מעברים (טרנזיטים)*\n\n"
+
+                f"🌍 *מפת מעברים (טרנזיטית)*\n\n"
+
                 f"✅ משתמש מזוהה: *{profile['name']}*\n"
+
                 f"📅 {profile['birthdate']} | ⏰ {profile['birthtime']}\n"
+
                 f"📍 לידה: {profile['birth_location'][0]}°, {profile['birth_location'][1]}°\n\n"
+
                 "כעת הזן את המיקום הנוכחי שלך:\n"
+
                 "`Latitude, Longitude`\n\n"
+
                 "לדוגמה: `32.08, 34.78`\n"
-                "(אם אתה באותו מקום, שלח את אותם קואורדינטות)",
+
+                "(אם אתה באותו מקום, שלח את אותן קואורדינטות)",
+
                 parse_mode='Markdown'
+
             )
+
             return TRANSIT_CURRENT_LOCATION
+
         else:
+
             await query.edit_message_text(
-                "🌍 *מפת מעברים (טרנזיטים)*\n\n"
+
+                "🌍 *מפת מעברים (טרנזיטית)*\n\n"
+
                 "ניתוח אסטרולוגי של המעברים הנוכחיים או העתידיים.\n\n"
+
                 "נתחיל באיסוף נתוני הלידה שלך.\n"
+
                 "אנא שלח את השם המלא:",
+
                 parse_mode='Markdown'
+
             )
+
             return TRANSIT_NAME
 
     elif query.data == "help":
@@ -329,8 +378,10 @@ async def name_analysis_nikud(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode='Markdown'
         )
 
-        # חזרה לתפריט
+        # שמירת קלט
         user_id = update.effective_user.id
+        save_user_input(user_id, {'type': 'name_analysis', 'name': name, 'nikud': nikud_list})
+
         await update.message.reply_text(
             "לניתוח נוסף, בחר מהתפריט:",
             reply_markup=get_main_menu_keyboard(user_id)
@@ -566,6 +617,15 @@ async def chart_interpretation(update: Update, context: ContextTypes.DEFAULT_TYP
             'birth_location': location
         }
 
+        save_user_input(user_id, {
+            'type': 'birth_chart',
+            'name': name,
+            'birthdate': str(birthdate),
+            'birthtime': str(birthtime),
+            'location': location,
+            'interpreted': is_interpreted
+        })
+
     except Exception as e:
         logger.error(f"Error in birth chart analysis: {e}", exc_info=True)
         await query.message.reply_text(
@@ -789,8 +849,8 @@ async def transit_interpretation_selection(update: Update, context: ContextTypes
         await query.edit_message_text(
             "⏳ מחשב טרנזיטים נוכחיים... אנא המתן..."
         )
-        await process_current_transits(query, context)
-        return MAIN_MENU
+        # ✅ התיקון: מוסיפים await ומחזירים את הערך
+        return await process_current_transits(query, context)
 
 
 async def transit_future_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -947,6 +1007,16 @@ async def process_current_transits(query, context: ContextTypes.DEFAULT_TYPE):
             'birth_location': birth_location
         }
 
+        save_user_input(user_id, {
+            'type': 'current_transits',
+            'name': name,
+            'birthdate': str(birthdate),
+            'birthtime': str(birthtime),
+            'birth_location': birth_location,
+            'current_location': current_location,
+            'interpreted': is_interpreted
+        })
+
     except Exception as e:
         logger.error(f"Error in current transits: {e}", exc_info=True)
         await query.message.reply_text(
@@ -956,6 +1026,9 @@ async def process_current_transits(query, context: ContextTypes.DEFAULT_TYPE):
 
     # ניקוי המידע (אבל לא הפרופיל!)
     context.user_data.clear()
+
+    # ✅ חשוב! מחזירים את המצב הבא
+    return MAIN_MENU
 
 
 async def process_future_transits(query, context: ContextTypes.DEFAULT_TYPE):
@@ -1032,6 +1105,18 @@ async def process_future_transits(query, context: ContextTypes.DEFAULT_TYPE):
             'birth_location': birth_location
         }
 
+        save_user_input(user_id, {
+            'type': 'future_transits',
+            'name': name,
+            'birthdate': str(birthdate),
+            'birthtime': str(birthtime),
+            'birth_location': birth_location,
+            'current_location': current_location,
+            'days_ahead': days_ahead,
+            'sort_mode': sort_mode,
+            'interpreted': is_interpreted
+        })
+
     except Exception as e:
         logger.error(f"Error in future transits: {e}", exc_info=True)
         await query.message.reply_text(
@@ -1041,6 +1126,9 @@ async def process_future_transits(query, context: ContextTypes.DEFAULT_TYPE):
 
     # ניקוי המידע (אבל לא הפרופיל!)
     context.user_data.clear()
+
+    # ✅ חשוב! מחזירים את המצב הבא
+    return MAIN_MENU
 
 
 def format_future_transits_report(result: dict, sort_mode: str = "duration", is_interpreted: bool = False) -> list:
@@ -1122,135 +1210,125 @@ def format_future_transits_report(result: dict, sort_mode: str = "duration", is_
     report.append(f"סה\"כ היבטים: {metadata['total_aspects']}")
     report.append("")
 
-    # מיון לפי אירועים - מצב חדש!
+    # ✅ מיון לפי אירועים - מצב חדש!
     if sort_mode == "events":
-        try:
-            report.append("=" * 80)
-            report.append("ציר זמן כרונולוגי - ממוין לפי אירועים")
-            report.append("=" * 80)
+        report.append("=" * 80)
+        report.append("ציר זמן כרונולוגי - ממוין לפי אירועים")
+        report.append("=" * 80)
+        report.append("")
+
+        # בניית רשימת אירועים
+        events = []
+
+        for aspect in result['aspects']:
+            lifecycle = aspect['lifecycle']
+            aspect_name_heb = ASPECTS_HEB.get(aspect['aspect_type'], aspect['aspect_type'])
+            aspect_title = f"{aspect['natal_planet']} (לידה) {aspect_name_heb} {aspect['transit_planet']} (מעבר)"
+
+            # אירוע כניסה
+            if lifecycle['start']:
+                events.append({
+                    'date': lifecycle['start'],
+                    'type': 'entry',
+                    'aspect': aspect,
+                    'aspect_title': aspect_title,
+                    'aspect_name_heb': aspect_name_heb
+                })
+
+            # אירועי שיא
+            if lifecycle.get('exact_dates') and isinstance(lifecycle['exact_dates'], list):
+                for exact in lifecycle['exact_dates']:
+                    if exact and 'date' in exact:
+                        events.append({
+                            'date': exact['date'],
+                            'type': 'exact',
+                            'aspect': aspect,
+                            'aspect_title': aspect_title,
+                            'aspect_name_heb': aspect_name_heb,
+                            'is_retrograde': exact.get('is_retrograde', False)
+                        })
+
+            # אירוע יציאה
+            if lifecycle['end']:
+                events.append({
+                    'date': lifecycle['end'],
+                    'type': 'exit',
+                    'aspect': aspect,
+                    'aspect_title': aspect_title,
+                    'aspect_name_heb': aspect_name_heb
+                })
+
+        # מיון לפי תאריך
+        events.sort(key=lambda e: e['date'])
+
+        # טעינת נתוני פרשנות אם נדרש
+        chart_data = None
+        if is_interpreted:
+            try:
+                from src.birth_chart_analysis.ChartDataLoaders import load_all_chart_data
+                chart_data = load_all_chart_data()
+            except Exception as e:
+                logger.error(f"Failed to load chart data for interpretation: {e}")
+                chart_data = None
+
+        # הדפסת האירועים
+        for i, event in enumerate(events, 1):
+            lifecycle = event['aspect']['lifecycle']
+
+            # תאריך האירוע
+            event_date = format_datetime(event['date'])
+
+            # אייקון לפי סוג אירוע
+            if event['type'] == 'entry':
+                icon = "🟢 כניסה להיבט"
+            elif event['type'] == 'exact':
+                retro_mark = " ⟲" if event.get('is_retrograde') else ""
+                icon = f"⭐ שיא היבט{retro_mark}"
+            else:  # exit
+                icon = "🔴 יציאה מהיבט"
+
+            # הדפס את האירוע
+            report.append(f"📅 {event_date} - {icon}")
+            report.append(f"   {event['aspect_title']}")
+
+            # פרטים נוספים - תקופת פעילות (תמיד)
+            if lifecycle['start'] and lifecycle['end']:
+                duration_str = format_duration_precise(lifecycle['start'], lifecycle['end'])
+                passes_info = f", {lifecycle['num_passes']} מעברים" if lifecycle.get('num_passes', 1) > 1 else ""
+                report.append(
+                    f"   תקופת פעילות: {format_datetime(lifecycle['start'])} - {format_datetime(lifecycle['end'])} ({duration_str}{passes_info})")
+
+            # פרשנות (לכל סוג אירוע!)
+            if is_interpreted and chart_data:
+                PLANET_NAMES_ENG = {
+                    'שמש': 'Sun', 'ירח': 'Moon', 'מרקורי': 'Mercury',
+                    'ונוס': 'Venus', 'מאדים': 'Mars', 'צדק': 'Jupiter',
+                    'שבתאי': 'Saturn', 'אורנוס': 'Uranus', 'נפטון': 'Neptune',
+                    'פלוטו': 'Pluto', 'ראש דרקון': 'North Node', 'לילית': 'Lilith',
+                    'כירון': 'Chiron', 'אופק (AC)': 'AC', 'רום שמיים (MC)': 'MC',
+                    'פורטונה': 'Fortune', 'ורטקס': 'Vertex'
+                }
+
+                p1_eng = PLANET_NAMES_ENG.get(event['aspect']['natal_planet'], event['aspect']['natal_planet'])
+                p2_eng = PLANET_NAMES_ENG.get(event['aspect']['transit_planet'], event['aspect']['transit_planet'])
+                aspect_name_eng = event['aspect']['aspect_type']
+
+                key = f"Natal {p1_eng} {aspect_name_eng} Transit {p2_eng}"
+                aspects_transit_data = chart_data.get('aspects_transit', {})
+                analysis = aspects_transit_data.get(key)
+
+                if analysis:
+                    report.append(f"\n   📖 פרשנות:\n   {analysis}\n")
+
             report.append("")
 
-            # בניית רשימת אירועים
-            events = []
+            # מפרידה כל 10 אירועים
+            if i % 10 == 0 and i < len(events):
+                report.append("-" * 80)
+                report.append("")
 
-            for aspect in result['aspects']:
-                lifecycle = aspect['lifecycle']
-                aspect_name_heb = ASPECTS_HEB.get(aspect['aspect_type'], aspect['aspect_type'])
-                aspect_title = f"{aspect['natal_planet']} (לידה) {aspect_name_heb} {aspect['transit_planet']} (מעבר)"
-
-                # אירוע כניסה
-                if lifecycle['start']:
-                    events.append({
-                        'date': lifecycle['start'],
-                        'type': 'entry',
-                        'aspect': aspect,
-                        'aspect_title': aspect_title,
-                        'aspect_name_heb': aspect_name_heb
-                    })
-
-                # אירועי שיא
-                if lifecycle.get('exact_dates') and isinstance(lifecycle['exact_dates'], list):
-                    for exact in lifecycle['exact_dates']:
-                        if exact and 'date' in exact:
-                            events.append({
-                                'date': exact['date'],
-                                'type': 'exact',
-                                'aspect': aspect,
-                                'aspect_title': aspect_title,
-                                'aspect_name_heb': aspect_name_heb,
-                                'is_retrograde': exact.get('is_retrograde', False)
-                            })
-
-                # אירוע יציאה
-                if lifecycle['end']:
-                    events.append({
-                        'date': lifecycle['end'],
-                        'type': 'exit',
-                        'aspect': aspect,
-                        'aspect_title': aspect_title,
-                        'aspect_name_heb': aspect_name_heb
-                    })
-
-            # מיון לפי תאריך
-            events.sort(key=lambda e: e['date'])
-
-            # טעינת נתוני פרשנות אם נדרש
-            chart_data = None
-            if is_interpreted:
-                try:
-                    from src.birth_chart_analysis.ChartDataLoaders import load_all_chart_data
-                    chart_data = load_all_chart_data()
-                except Exception as e:
-                    logger.error(f"Failed to load chart data for interpretation: {e}")
-                    # ממשיכים בלי פרשנות
-                    chart_data = None
-
-                # הדפסת האירועים
-                for i, event in enumerate(events, 1):
-                    lifecycle = event['aspect']['lifecycle']
-
-                    # תאריך האירוע
-                    event_date = format_datetime(event['date'])
-
-                    # אייקון לפי סוג אירוע
-                    if event['type'] == 'entry':
-                        icon = "🟢 כניסה להיבט"
-                    elif event['type'] == 'exact':
-                        retro_mark = " ⟲" if event.get('is_retrograde') else ""
-                        icon = f"⭐ שיא היבט{retro_mark}"
-                    else:  # exit
-                        icon = "🔴 יציאה מהיבט"
-
-                    # הדפס את האירוע
-                    report.append(f"📅 {event_date} - {icon}")
-                    report.append(f"   {event['aspect_title']}")
-
-                    # פרטים נוספים (רק בכניסה ושיא)
-                    if event['type'] == 'entry':
-                        if lifecycle['start'] and lifecycle['end']:
-                            duration_str = format_duration_precise(lifecycle['start'], lifecycle['end'])
-                            report.append(
-                                f"   תקופת פעילות: {format_datetime(lifecycle['start'])} - {format_datetime(lifecycle['end'])} ({duration_str})")
-
-                    # פרשנות (רק בשיא)
-                    if event['type'] == 'exact' and is_interpreted and chart_data:
-
-                        PLANET_NAMES_ENG = {
-                            'שמש': 'Sun', 'ירח': 'Moon', 'מרקורי': 'Mercury',
-                            'ונוס': 'Venus', 'מאדים': 'Mars', 'צדק': 'Jupiter',
-                            'שבתאי': 'Saturn', 'אורנוס': 'Uranus', 'נפטון': 'Neptune',
-                            'פלוטו': 'Pluto', 'ראש דרקון': 'North Node', 'לילית': 'Lilith',
-                            'כירון': 'Chiron', 'אופק (AC)': 'AC', 'רום שמיים (MC)': 'MC',
-                            'פורטונה': 'Fortune', 'ורטקס': 'Vertex'
-                        }
-
-                        p1_eng = PLANET_NAMES_ENG.get(event['aspect']['natal_planet'], event['aspect']['natal_planet'])
-                        p2_eng = PLANET_NAMES_ENG.get(event['aspect']['transit_planet'], event['aspect']['transit_planet'])
-                        aspect_name_eng = event['aspect']['aspect_type']
-
-                        key = f"Natal {p1_eng} {aspect_name_eng} Transit {p2_eng}"
-                        aspects_transit_data = chart_data.get('aspects_transit', {})
-                        analysis = aspects_transit_data.get(key)
-
-                        if analysis:
-                            report.append(f"\n   📖 פרשנות:\n   {analysis}\n")
-
-                    report.append("")
-
-                    # מפריד כל 10 אירועים
-                    if i % 10 == 0 and i < len(events):
-                        report.append("-" * 80)
-                        report.append("")
-
-                    return report
-
-        except Exception as e:
-            logger.error(f"Error in events sorting: {e}", exc_info=True)
-            # במקרה של שגיאה, נחזור למיון רגיל
-            report.append("⚠️ אירעה שגיאה במיון לפי אירועים, מציג מיון כרונולוגי רגיל")
-            report.append("")
-            sort_mode = "chronological"  # fallback
-
+        # ✅ במצב events - מחזירים רק את ציר הזמן עם פרשנויות לכל אירוע
+        return report
 
     # מיון ההיבטים (מצב ישן - לפי משך או כרונולוגי לפי היבט)
     if sort_mode == "chronological":
@@ -1265,21 +1343,25 @@ def format_future_transits_report(result: dict, sort_mode: str = "duration", is_
                              else float('inf')
                          ))
 
-    report.append("=" * 80)
-    if sort_mode == "chronological":
-        sort_type_text = "ממוין לפי תאריך התחלה (כרונולוגי)"
-    else:
-        sort_type_text = "ממוין לפי משך זמן (מהקצר לארוך)"
-    report.append(f"רשימת כל ההיבטים העתידיים - {sort_type_text}")
-    report.append("=" * 80)
-    report.append("")
+    # ✅ הוספת כותרת רק אם לא במצב events (כי כבר הוספנו למעלה)
+    if sort_mode != "events":
+        report.append("=" * 80)
+        if sort_mode == "chronological":
+            sort_type_text = "ממוין לפי תאריך התחלה (כרונולוגי)"
+        else:
+            sort_type_text = "ממוין לפי משך זמן (מהקצר לארוך)"
+        report.append(f"רשימת כל ההיבטים העתידיים - {sort_type_text}")
+        report.append("=" * 80)
+        report.append("")
 
-    # טעינת נתוני פרשנות אם נדרש
+    # טעינת נתוני פרשנות אם נדרש (ולא נטען כבר)
     chart_data = None
     if is_interpreted:
-        from src.birth_chart_analysis.ChartDataLoaders import load_all_chart_data
-
-        chart_data = load_all_chart_data()
+        try:
+            from src.birth_chart_analysis.ChartDataLoaders import load_all_chart_data
+            chart_data = load_all_chart_data()
+        except:
+            pass
 
     for i, aspect in enumerate(aspects, 1):
         lifecycle = aspect['lifecycle']
@@ -1309,7 +1391,7 @@ def format_future_transits_report(result: dict, sort_mode: str = "duration", is_
             exact_formatted = format_datetime(first_exact['date'])
             retro_marker = " ⟲" if first_exact['is_retrograde'] else ""
 
-            report.append(f"    - שיא ההיבט: {exact_formatted}{retro_marker}")
+            report.append(f"    - שיא היבט: {exact_formatted}{retro_marker}")
 
             # שיאים נוספים
             if len(lifecycle['exact_dates']) > 1:
@@ -1327,7 +1409,7 @@ def format_future_transits_report(result: dict, sort_mode: str = "duration", is_
                 'שמש': 'Sun', 'ירח': 'Moon', 'מרקורי': 'Mercury',
                 'ונוס': 'Venus', 'מאדים': 'Mars', 'צדק': 'Jupiter',
                 'שבתאי': 'Saturn', 'אורנוס': 'Uranus', 'נפטון': 'Neptune',
-                'פלוטו': 'Pluto', 'ראש דרקון': 'North Node', 'לילית': 'Lilith',
+                'פלוטו': 'Pluto', 'ראש הדרקון': 'North Node', 'לילית': 'Lilith',
                 'כירון': 'Chiron', 'אופק (AC)': 'AC', 'רום שמיים (MC)': 'MC',
                 'פורטונה': 'Fortune', 'ורטקס': 'Vertex'
             }

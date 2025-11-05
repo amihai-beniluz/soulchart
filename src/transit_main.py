@@ -184,6 +184,208 @@ def format_duration(start_str: str, end_str: str) -> str:
             return f"{hours} שעות"
 
 
+def format_future_transits_timeline(result: dict, is_interpreted: bool = False) -> list:
+    """
+    מייצר דוח ממוין לפי ציר זמן כרונולוגי של אירועים (כניסה/שיא/יציאה).
+
+    :param result: תוצאות החישוב מ-TransitCalculator
+    :param is_interpreted: האם להוסיף פרשנות אסטרולוגית
+    :return: רשימת שורות לדוח
+    """
+    from datetime import datetime
+
+    # מיפוי שמות היבטים לעברית
+    ASPECTS_HEB = {
+        'Conjunction': 'צמוד',
+        'Opposition': 'מול',
+        'Trine': 'משולש',
+        'Square': 'ריבוע',
+        'Sextile': 'משושה',
+        'Inconjunct': 'קווינקונקס',
+        'SemiSextile': 'חצי-משושה',
+        'SemiSquare': 'חצי-ריבוע',
+        'Sesquiquadrate': 'סקוויקפייטה',
+        'Quintile': 'קווינטייל',
+        'Biquintile': 'ביקווינטייל'
+    }
+
+    def format_datetime(iso_str: str) -> str:
+        """המרת תאריך לפורמט DD.MM.YYYY HH:MM"""
+        dt = datetime.fromisoformat(iso_str)
+        return dt.strftime('%d.%m.%Y %H:%M')
+
+    def format_duration_precise(start_str: str, end_str: str) -> str:
+        """ממיר משך זמן לפורמט מדויק"""
+        start = datetime.fromisoformat(start_str)
+        end = datetime.fromisoformat(end_str)
+
+        total_seconds = (end - start).total_seconds()
+        total_hours = total_seconds / 3600
+        total_days = total_seconds / (3600 * 24)
+        total_months = total_days / 30.5
+        total_years = total_days / 365.25
+
+        if total_years >= 1:
+            years = int(total_years)
+            return f"{years} שנה" if years == 1 else f"{years} שנים"
+        elif total_months >= 2:
+            return f"{int(total_months)} חודשים"
+        elif total_months >= 1:
+            return "חודש"
+        elif total_days >= 2:
+            return f"{int(total_days)} ימים"
+        elif total_days >= 1:
+            return "יום"
+        elif total_hours >= 2:
+            return f"{int(total_hours)} שעות"
+        elif total_hours >= 1:
+            return "שעה"
+        else:
+            minutes = int(total_seconds / 60)
+            return "דקה" if minutes <= 1 else f"{minutes} דקות"
+
+    # יצירת רשימת אירועים
+    events = []
+
+    for aspect in result['aspects']:
+        lifecycle = aspect['lifecycle']
+        aspect_name_heb = ASPECTS_HEB.get(aspect['aspect_type'], aspect['aspect_type'])
+
+        # אירוע כניסה להיבט
+        if lifecycle['start']:
+            events.append({
+                'datetime': datetime.fromisoformat(lifecycle['start']),
+                'type': 'entry',
+                'aspect': aspect,
+                'aspect_name_heb': aspect_name_heb,
+                'lifecycle': lifecycle
+            })
+
+        # אירועי שיא (exact dates)
+        if lifecycle['exact_dates']:
+            for exact in lifecycle['exact_dates']:
+                events.append({
+                    'datetime': datetime.fromisoformat(exact['date']),
+                    'type': 'peak',
+                    'aspect': aspect,
+                    'aspect_name_heb': aspect_name_heb,
+                    'lifecycle': lifecycle,
+                    'is_retrograde': exact.get('is_retrograde', False)
+                })
+
+        # אירוע יציאה מהיבט
+        if lifecycle['end']:
+            events.append({
+                'datetime': datetime.fromisoformat(lifecycle['end']),
+                'type': 'exit',
+                'aspect': aspect,
+                'aspect_name_heb': aspect_name_heb,
+                'lifecycle': lifecycle
+            })
+
+    # מיון כרונולוגי
+    events.sort(key=lambda x: x['datetime'])
+
+    # בניית הדוח
+    report = []
+    metadata = result['metadata']
+
+    interpretation_text = " (עם פרשנות)" if is_interpreted else ""
+    report.append(f"=== טרנזיטים עתידיים עבור {metadata['user_name']}{interpretation_text} ===")
+    report.append(f"תאריך לידה: {metadata['birth_date']}")
+    report.append(f"נוצר ב: {metadata['calculated_at'][:19]}")
+
+    start_date = datetime.fromisoformat(metadata['range'][0])
+    end_date = datetime.fromisoformat(metadata['range'][1])
+    report.append(f"טווח: {start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}")
+    report.append(f"סה\"כ אירועים: {len(events)}")
+    report.append("")
+
+    report.append("=" * 80)
+    report.append("ציר זמן כרונולוגי - ממוין לפי אירועים")
+    report.append("=" * 80)
+    report.append("")
+
+    # טעינת נתוני פרשנות אם נדרש
+    chart_data = None
+    if is_interpreted:
+        from birth_chart_analysis.ChartDataLoaders import load_all_chart_data
+        chart_data = load_all_chart_data()
+
+    # הדפסת אירועים
+    for i, event in enumerate(events, 1):
+        aspect = event['aspect']
+        lifecycle = event['lifecycle']
+
+        # סמלים לסוג האירוע
+        if event['type'] == 'entry':
+            icon = '🟢'
+            event_type = 'כניסה להיבט'
+        elif event['type'] == 'peak':
+            icon = '⭐'
+            event_type = 'שיא היבט'
+            if event.get('is_retrograde'):
+                icon = '⭐🔄'
+                event_type = 'שיא היבט (רטרוגרדי)'
+        else:  # exit
+            icon = '🔴'
+            event_type = 'יציאה מהיבט'
+
+        # שורת כותרת האירוע
+        date_str = format_datetime(event['datetime'].isoformat())
+        aspect_line = f"📅 {date_str} - {icon} {event_type}"
+        report.append(aspect_line)
+
+        # פרטי ההיבט
+        aspect_desc = f"    {aspect['natal_planet']} (לידה) {event['aspect_name_heb']} {aspect['transit_planet']} (מעבר)"
+        report.append(aspect_desc)
+
+        # תקופת פעילות (רק באירועי כניסה ושיא)
+        if event['type'] in ['entry', 'peak'] and lifecycle['start'] and lifecycle['end']:
+            start_formatted = format_datetime(lifecycle['start'])
+            end_formatted = format_datetime(lifecycle['end'])
+            duration_str = format_duration_precise(lifecycle['start'], lifecycle['end'])
+
+            passes_suffix = ""
+            if lifecycle['num_passes'] > 1:
+                passes_suffix = f", {lifecycle['num_passes']} מעברים"
+
+            report.append(f"    תקופת פעילות: {start_formatted} - {end_formatted} ({duration_str}{passes_suffix})")
+
+        # פרשנות אסטרולוגית (רק באירועי שיא)
+        if event['type'] == 'peak' and is_interpreted and chart_data:
+            PLANET_NAMES_ENG = {
+                'שמש': 'Sun', 'ירח': 'Moon', 'מרקורי': 'Mercury',
+                'ונוס': 'Venus', 'מאדים': 'Mars', 'צדק': 'Jupiter',
+                'שבתאי': 'Saturn', 'אורנוס': 'Uranus', 'נפטון': 'Neptune',
+                'פלוטו': 'Pluto', 'ראש דרקון': 'North Node', 'לילית': 'Lilith',
+                'כירון': 'Chiron', 'אופק (AC)': 'AC', 'רום שמיים (MC)': 'MC',
+                'פורטונה': 'Fortune', 'ורטקס': 'Vertex'
+            }
+
+            p1_eng = PLANET_NAMES_ENG.get(aspect['natal_planet'], aspect['natal_planet'])
+            p2_eng = PLANET_NAMES_ENG.get(aspect['transit_planet'], aspect['transit_planet'])
+            aspect_name_eng = aspect['aspect_type']
+
+            key = f"Natal {p1_eng} {aspect_name_eng} Transit {p2_eng}"
+            aspects_transit_data = chart_data.get('aspects_transit', {})
+            analysis = aspects_transit_data.get(key)
+
+            if analysis:
+                report.append(f"\n    📖 פרשנות:\n    {analysis}")
+            else:
+                report.append(f"\n    ⚠️ פרשנות להיבט זה לא נמצאה במאגר")
+
+        report.append("")
+
+        # מפרידה כל 15 אירועים
+        if i % 15 == 0 and i < len(events):
+            report.append("-" * 80)
+            report.append("")
+
+    return report
+
+
 def format_future_transits_report(result: dict, is_time_sorted: bool = False, is_interpreted: bool = False) -> list:
     """
     ממיר את תוצאות ה-JSON לדוח טקסט קריא.

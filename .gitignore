@@ -4,5 +4,6 @@ data/
 names/
 charts/
 transits/
+user_data/
 =======
 *.pyc
