@@ -8,7 +8,6 @@ import cProfile
 import pstats
 import io
 from pstats import SortKey
-import sys
 
 
 def profile_transit_analysis():
@@ -19,7 +18,7 @@ def profile_transit_analysis():
     # sys.path.insert(0, '/path/to/your/project')
 
     # ייבא את הפונקציה הראשית
-    from src.transit_main import main
+    from src.cli.transit_main import main
 
     # צור פרופיילר
     profiler = cProfile.Profile()

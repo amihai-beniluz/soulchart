@@ -62,7 +62,7 @@ os.makedirs(NAMES_DIR, exist_ok=True)
 os.makedirs(CHARTS_DIR, exist_ok=True)
 os.makedirs(TRANSITS_DIR, exist_ok=True)
 
-USER_DATA_DIR = os.path.join(BASE_DIR, 'user_data')
+USER_DATA_DIR = os.path.join(BASE_DIR, 'output', 'user_data')
 os.makedirs(USER_DATA_DIR, exist_ok=True)
 
 

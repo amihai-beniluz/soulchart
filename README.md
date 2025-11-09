@@ -128,7 +128,8 @@ SoulChart/
 ├── output/                         # 📁 תיקיית פלט (נוצרת אוטומטית)
 │   ├── names/                      # דוחות ניתוח שמות
 │   ├── charts/                     # דוחות ומפות לידה
-│   └── transits/                   # דוחות טרנזיטים
+│   ├── transits/                   # דוחות טרנזיטים
+│   └── user_data/                  # נתוני משתמשים
 │
 ├── src/                            # 📁 קוד מקור
 │   ├── name_analysis/              # 🔤 מודול ניתוח שמות
@@ -144,12 +145,13 @@ SoulChart/
 │   │   ├── BirthChartDrawer.py     # ציור מפות (matplotlib)
 │   │   └── TransitCalculator.py    # חישוב טרנזיטים
 │   │
+│   ├── main.py                         # 🚀 הרצה ראשית (שם + מפת לידה)
+│   ├── transit_main.py                 # 🌍 הרצה לטרנזיטים
 │   ├── user.py                     # מחלקת משתמש
 │   └── utils.py                    # פונקציות עזר
 │
-├── main.py                         # 🚀 הרצה ראשית (שם + מפת לידה)
-├── transit_main.py                 # 🌍 הרצה לטרנזיטים
 ├── requirements.txt                # תלויות
+├── bot.py                          # בוט טלגרם אינטרקטיבי
 └── README.md                       # תיעוד זה
 ```
 

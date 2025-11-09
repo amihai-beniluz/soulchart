@@ -1,6 +1,6 @@
 # ייבוא הפונקציות לטעינת המידע
 from .NameDataLoaders import load_all_name_data
-from src.utils import get_position_key, get_element_key, normalize_final_letters, position_to_word
+from .name_utils import get_position_key, get_element_key, normalize_final_letters, position_to_word
 
 
 class NameAnalysis:
@@ -110,3 +110,4 @@ class NameAnalysis:
             result.append("--------\n")
 
         return result
+    
