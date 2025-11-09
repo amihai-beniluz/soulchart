@@ -205,7 +205,7 @@ def extract_key_from_line(line: str) -> str:
     return line
 
 
-def get_data_dir(module_dir: str, levels_up: int = 2) -> str:
+def get_data_dir(module_dir: str, levels_up: int = 1) -> str:
     """
     מחשב את נתיב תיקיית data יחסית למודול.
 

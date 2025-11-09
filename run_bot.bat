@@ -29,8 +29,8 @@ if exist "venv\Scripts\activate.bat" (
     echo [*] Virtual environment activated
 )
 
-REM הרץ את הבוט ושמור לוגים
-python bot.py 2>> logs\bot.log
+REM הרץ את הבוט ושמור לוגים (נתיב חדש)
+python src\bot\bot_main.py 2>> logs\bot.log
 
 REM אם הגענו לכאן, הבוט קרס או נעצר
 echo.

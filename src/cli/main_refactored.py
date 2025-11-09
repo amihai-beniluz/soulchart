@@ -6,14 +6,17 @@ import sys
 from datetime import datetime
 
 # הוספת src לנתיב
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
-from ..birth_chart_analysis.ChartAnalysis import ChartAnalysis
-from ..birth_chart_analysis.BirthChartDrawer import draw_and_save_chart
-from ..birth_chart_analysis.CalculationEngine import calculate_chart_positions
-from ..name_analysis.NameAnalysis import NameAnalysis
-from ..user import User
-from ..core import write_results_to_file, get_interpretation_choice
+from birth_chart_analysis.ChartAnalysis import ChartAnalysis
+from birth_chart_analysis.BirthChartDrawer import draw_and_save_chart
+from birth_chart_analysis.CalculationEngine import calculate_chart_positions
+from name_analysis.NameAnalysis import NameAnalysis
+from user import User
+from core import write_results_to_file, get_interpretation_choice
 
 # הגדרת תיקיות
 MODULE_DIR = os.path.dirname(__file__)
@@ -24,7 +27,7 @@ CHARTS_DIR = os.path.join(PROJECT_DIR, 'output', 'charts')
 
 def get_user_input_combined():
     """אוסף את כל נתוני המשתמש: שם, תאריך, שעה, מיקום וניקוד."""
-    from ..core.user_input import get_validated_date, get_validated_time
+    from core.user_input import get_validated_date, get_validated_time
 
     print("\n--- איסוף נתוני משתמש ---")
 
@@ -98,7 +101,7 @@ def main():
         chart_positions = calculate_chart_positions(
             birth_datetime,
             user.location[0],  # Latitude
-            user.location[1]  # Longitude
+            user.location[1]   # Longitude
         )
 
         # ביצוע ניתוח טקסטואלי
@@ -111,10 +114,6 @@ def main():
         # ציור ושמירת מפת הלידה כתמונה
         image_filename = os.path.join(CHARTS_DIR, f"{user.name}_chart.png")
         draw_and_save_chart(chart_positions, user, image_filename)
-
-        print(f"\n✅ ניתוח מפת לידה הושלם!")
-        print(f"   📄 דוח: {CHARTS_DIR}/{user.name}{suffix}")
-        print(f"   🖼️  תמונה: {image_filename}")
 
     except Exception as e:
         print(f"\n❌ אירעה שגיאה בניתוח מפת לידה: {e}")

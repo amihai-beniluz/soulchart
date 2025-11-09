@@ -2,16 +2,23 @@
 Handler למפות לידה בבוט הטלגרם.
 """
 import os
+import sys
 import logging
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from src.user import User
-from src.birth_chart_analysis.ChartAnalysis import ChartAnalysis
-from src.birth_chart_analysis.BirthChartDrawer import draw_and_save_chart
-from src.birth_chart_analysis.CalculationEngine import calculate_chart_positions
-from ..bot_utils import (
+# הוספת src לנתיב
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from user import User
+from birth_chart_analysis.ChartAnalysis import ChartAnalysis
+from birth_chart_analysis.BirthChartDrawer import draw_and_save_chart
+from birth_chart_analysis.CalculationEngine import calculate_chart_positions
+from bot.bot_utils import (
     save_user_input, save_user_profile, get_main_menu_keyboard,
     CHARTS_DIR, get_user_profile
 )

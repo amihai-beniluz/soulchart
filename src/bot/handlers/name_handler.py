@@ -1,14 +1,22 @@
 """
 Handler לניתוח שמות בבוט הטלגרם.
 """
+import os
+import sys
 import logging
 import re
 from io import BytesIO
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
-from src.name_analysis.NameAnalysis import NameAnalysis
-from ..bot_utils import save_user_input, get_main_menu_keyboard
+# הוספת src לנתיב
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from name_analysis.NameAnalysis import NameAnalysis
+from bot.bot_utils import save_user_input, get_main_menu_keyboard
 
 logger = logging.getLogger(__name__)
 
