@@ -94,7 +94,6 @@ def get_mode_selection():
 
 def run_current_transits(user: User, current_location: tuple, is_interpreted: bool = True):
     """מצב 1: ניתוח טרנזיטים נוכחיים"""
-    # TODO בשתי סוגי ההדפסות (עם או בלי פרשנות) יש היבטים ללא שיא, לוודא שכל השיפורים שהכנסנו למוד 2 נכנסו גם לפה
     print("\n--- ביצוע ניתוח מעברים נוכחיים ---\n")
     try:
         chart_analysis = ChartAnalysis(user)
