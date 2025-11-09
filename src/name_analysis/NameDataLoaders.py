@@ -1,15 +1,30 @@
+"""
+טוען נתונים קבליים לניתוח שמות מקבצי טקסט.
+משתמש במודול data_loader הגנרי.
+"""
 import os
+import sys
 import re
 
+# הוספת src לנתיב
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+from core.data_loader import get_data_dir
+
 MODULE_DIR = os.path.dirname(__file__)
-PROJECT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir, os.pardir))
-DATA_DIR = os.path.join(PROJECT_DIR, 'data')
+DATA_DIR = get_data_dir(MODULE_DIR)
 
 
-def load_letter_position_data():
+def load_letter_position_data() -> dict:
+    """טעינת נתוני אותיות לפי מיקום בשם."""
     letter_position_data = {}
+    filepath = os.path.join(DATA_DIR, 'letters_by_position.txt')
+
     try:
-        with open(os.path.join(DATA_DIR, 'letters_by_position.txt'), 'r', encoding='utf-8-sig') as f:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
             current_letter = None
             current_position = None
 
@@ -29,18 +44,22 @@ def load_letter_position_data():
                     continue
 
                 else:
-                    letter_position_data[current_letter][current_position] = line
+                    if current_letter and current_position:
+                        letter_position_data[current_letter][current_position] = line
 
     except Exception as e:
         print(f"Error reading the file: {e}")
 
-    return letter_position_data  # מחזירים את הנתונים שכבר נטענו
+    return letter_position_data
 
 
-def load_element_position_data():
+def load_element_position_data() -> dict:
+    """טעינת נתוני יסודות לפי מיקום."""
     element_position_data = {}
+    filepath = os.path.join(DATA_DIR, 'element_by_position.txt')
+
     try:
-        with open(os.path.join(DATA_DIR, 'element_by_position.txt'), 'r', encoding='utf-8-sig') as f:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
             current_element = None
 
             for line in f:
@@ -61,13 +80,17 @@ def load_element_position_data():
 
     except Exception as e:
         print(f"Error reading the file: {e}")
-    return element_position_data  # מחזירים את הנתונים שכבר נטענו
+
+    return element_position_data
 
 
-def load_letter_data():
+def load_letter_data() -> dict:
+    """טעינת נתוני אותיות בסיסיים."""
     letter_data = {}
+    filepath = os.path.join(DATA_DIR, 'letters.txt')
+
     try:
-        with open(os.path.join(DATA_DIR, 'letters.txt'), 'r', encoding='utf-8-sig') as f:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
             current_letter = None
 
             for line in f:
@@ -79,20 +102,23 @@ def load_letter_data():
                     letter_data[current_letter] = line
 
                 elif current_letter is not None:
-                    letter_data[current_letter] += "\n" + line  # רק אם אות קודמת הוגדרה
+                    letter_data[current_letter] += "\n" + line
 
     except FileNotFoundError:
         print("שגיאה: הקובץ 'data/letters.txt' לא נמצא.")
     except Exception as e:
         print(f"שגיאה בקריאת הקובץ: {e}")
 
-    return letter_data  # מחזירים את הנתונים שכבר נטענו
+    return letter_data
 
 
-def load_element_data():
+def load_element_data() -> dict:
+    """טעינת נתוני יסודות בסיסיים."""
     element_data = {}
+    filepath = os.path.join(DATA_DIR, 'element.txt')
+
     try:
-        with open(os.path.join(DATA_DIR, 'element.txt'), 'r', encoding='utf-8-sig') as f:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
             current_element = None
 
             for line in f:
@@ -103,27 +129,30 @@ def load_element_data():
                     element_data[current_element] = line
 
                 elif current_element is not None:
-                    element_data[current_element] += "\n" + line  # רק אם ניקוד קודם הוגדר
+                    element_data[current_element] += "\n" + line
 
     except FileNotFoundError:
         print("שגיאה: הקובץ 'data/element.txt' לא נמצא.")
     except Exception as e:
         print(f"שגיאה בקריאת הקובץ: {e}")
 
-    return element_data  # מחזירים את הנתונים שכבר נטענו
+    return element_data
 
 
-def load_letters_nikud_data():
+def load_letters_nikud_data() -> dict:
+    """טעינת נתוני אותיות לפי ניקוד."""
     letters_nikud_data = {}
+    filepath = os.path.join(DATA_DIR, 'letters_by_nikud.txt')
+
     try:
-        with open(os.path.join(DATA_DIR, 'letters_by_nikud.txt'), 'r', encoding='utf-8-sig') as f:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
             current_letter = None
 
             for line in f:
                 line = line.strip()
 
-                if line.startswith("האות"):  # שורה המתארת ניקוד חדש
-                    current_letter = line.split(" ")[1][0]  # זיהוי האות
+                if line.startswith("האות"):
+                    current_letter = line.split(" ")[1][0]
                     letters_nikud_data[current_letter] = {}
 
                 elif line == '':
@@ -133,28 +162,33 @@ def load_letters_nikud_data():
                     current_nikud = line.split(" ")[1].strip(":")[1:]
                     if current_nikud == "לא":
                         current_nikud = "ריק"
-                    letters_nikud_data[current_letter][current_nikud] = line  # הוספת התוכן למיקום הנוכחי
+                    if current_letter:
+                        letters_nikud_data[current_letter][current_nikud] = line
 
     except Exception as e:
         print(f"Error reading the file: {e}")
+
     return letters_nikud_data
 
 
-def load_nikud_position_data():
+def load_nikud_position_data() -> dict:
+    """טעינת נתוני ניקוד לפי מיקום."""
     nikud_position_data = {}
+    filepath = os.path.join(DATA_DIR, 'nikud_by_position.txt')
+
     try:
-        with open(os.path.join(DATA_DIR, 'nikud_by_position.txt'), 'r', encoding='utf-8-sig') as f:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
             current_nikud = None
             current_position = None
 
             for line in f:
                 line = line.strip()
 
-                if line.startswith("הניקוד"):  # שורה המתארת ניקוד חדש
-                    current_nikud = line.split(" ")[1]  # זיהוי הניקוד
+                if line.startswith("הניקוד"):
+                    current_nikud = line.split(" ")[1]
                     nikud_position_data[current_nikud] = {}
 
-                elif "באות" in line:  # זיהוי מיקום של הניקוד
+                elif "באות" in line:
                     current_position = line.split(" ")[1].strip(" ,")
                     match current_position:
                         case "הראשונה":
@@ -165,23 +199,29 @@ def load_nikud_position_data():
                             current_position = "שלישית"
                         case "הרביעית":
                             current_position = "רביעית ואילך"
-                    nikud_position_data[current_nikud][current_position] = line
+                    if current_nikud and current_position:
+                        nikud_position_data[current_nikud][current_position] = line
 
                 elif line == '':
                     continue
 
                 else:
-                    nikud_position_data[current_nikud][current_position] = line  # הוספת התוכן למיקום הנוכחי
+                    if current_nikud and current_position:
+                        nikud_position_data[current_nikud][current_position] = line
 
     except Exception as e:
         print(f"Error reading the file: {e}")
+
     return nikud_position_data
 
 
-def load_nikud_data():
+def load_nikud_data() -> dict:
+    """טעינת נתוני ניקוד בסיסיים."""
     nikud_data = {}
+    filepath = os.path.join(DATA_DIR, 'nikud.txt')
+
     try:
-        with open(os.path.join(DATA_DIR, 'nikud.txt'), 'r', encoding='utf-8-sig') as f:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
             current_nikud = None
 
             for line in f:
@@ -195,21 +235,23 @@ def load_nikud_data():
                     break
 
                 elif current_nikud is not None:
-                    nikud_data[current_nikud] += "\n" + line  # רק אם ניקוד קודם הוגדר
+                    nikud_data[current_nikud] += "\n" + line
 
     except FileNotFoundError:
         print("שגיאה: הקובץ 'data/nikud.txt' לא נמצא.")
     except Exception as e:
         print(f"שגיאה בקריאת הקובץ: {e}")
 
-    return nikud_data  # מחזירים את הנתונים שכבר נטענו
+    return nikud_data
 
 
-def load_letters_nikud_position_data():
+def load_letters_nikud_position_data() -> dict:
+    """טעינת נתוני אותיות לפי ניקוד ומיקום."""
     letters_nikud_position_data = {}
-    try:
-        with open(os.path.join(DATA_DIR, 'letters_by_nikud_position.txt'), 'r', encoding='utf-8-sig') as f:
+    filepath = os.path.join(DATA_DIR, 'letters_by_nikud_position.txt')
 
+    try:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -218,8 +260,8 @@ def load_letters_nikud_position_data():
                 if line.startswith("האות"):
                     try:
                         parts = line.split()
-                        current_letter = parts[1][0]  # האות עצמה
-                        current_nikud = parts[2][1:]  # הניקוד
+                        current_letter = parts[1][0]
+                        current_nikud = parts[2][1:]
                         if current_nikud == "לא":
                             current_nikud = "ריק"
                         current_position = parts[4] if parts[4] != "באות" else parts[5]
@@ -235,17 +277,25 @@ def load_letters_nikud_position_data():
                             letters_nikud_position_data[current_letter][current_nikud] = {}
                         if current_position not in letters_nikud_position_data[current_letter][current_nikud]:
                             letters_nikud_position_data[current_letter][current_nikud][current_position] = ""
+
                         letters_nikud_position_data[current_letter][current_nikud][current_position] += line + "\n"
+
                     except Exception as e:
-                        print(f"שורת כותרת לא תקינה: {line} — {e}")
+                        print(f"שורת כותרת לא תקינה: {line} – {e}")
 
     except Exception as e:
         print(f"Error reading the file: {e}")
+
     return letters_nikud_position_data
 
 
-def load_all_name_data():
-    """טוען את כל הנתונים לזיכרון"""
+def load_all_name_data() -> dict:
+    """
+    טוען את כל הנתונים לזיכרון.
+
+    Returns:
+        dict: מילון עם כל סוגי הנתונים
+    """
     return {
         'letter_data': load_letter_data(),
         'nikud_data': load_nikud_data(),
@@ -254,5 +304,5 @@ def load_all_name_data():
         'element_position_data': load_element_position_data(),
         'nikud_position_data': load_nikud_position_data(),
         'letters_nikud_data': load_letters_nikud_data(),
-        'letters_nikud_position_data': load_nikud_position_data()
+        'letters_nikud_position_data': load_letters_nikud_position_data()
     }
