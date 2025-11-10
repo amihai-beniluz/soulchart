@@ -15,6 +15,7 @@ from birth_chart_analysis.ChartAnalysis import ChartAnalysis
 from birth_chart_analysis.BirthChartDrawer import draw_and_save_chart
 from birth_chart_analysis.CalculationEngine import calculate_chart_positions
 from name_analysis.NameAnalysis import NameAnalysis
+from names_manager import NamesManager, nikud_dict_from_nikud_name
 from user import User
 from core import write_results_to_file, get_interpretation_choice
 
@@ -23,6 +24,112 @@ MODULE_DIR = os.path.dirname(__file__)
 PROJECT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir, os.pardir))
 NAMES_DIR = os.path.join(PROJECT_DIR, 'output', 'names')
 CHARTS_DIR = os.path.join(PROJECT_DIR, 'output', 'charts')
+NAMES_FILE = os.path.join(PROJECT_DIR, 'data', 'names.txt')
+
+# אתחול מנהל השמות
+names_manager = NamesManager(NAMES_FILE)
+
+
+def get_nikud_for_name(name: str):
+    """
+    מקבל ניקוד לשם - אוטומטית מהמאגר או ידנית מהמשתמש.
+
+    Args:
+        name: השם ללא ניקוד
+
+    Returns:
+        דיקשנרי ניקוד
+    """
+    nikud_name, nikud_options = names_manager.get_nikud_for_name(name)
+
+    if nikud_name:
+        # שם עם ניקוד יחיד
+        print(f"\n✅ שמך מופיע במערכת עם הניקוד הבא: {nikud_name}")
+        choice = input("האם הניקוד נכון? (כן/לא): ").strip().lower()
+
+        if choice in ['כן', 'yes', 'y', 'כ']:
+            return nikud_dict_from_nikud_name(name, nikud_name)
+        else:
+            print("אנא הזן את ניקוד שמך באופן ידני:")
+            nikud_dict = get_manual_nikud(name)
+            # עדכון המאגר עם הניקוד החדש
+            manual_nikud_name = apply_nikud_to_name(name, nikud_dict)
+            names_manager.add_or_update_name(name, manual_nikud_name)
+            print(f"✅ הניקוד עודכן במערכת!")
+            return nikud_dict
+
+    elif len(nikud_options) > 1:
+        # מספר אפשרויות ניקוד
+        print(f"\n⚠️ שמך מופיע במערכת עם {len(nikud_options)} אפשרויות ניקוד:")
+        for i, option in enumerate(nikud_options, 1):
+            print(f"{i}. {option}")
+
+        print(f"{len(nikud_options) + 1}. הזן ניקוד ידנית")
+
+        while True:
+            try:
+                choice = int(input("\nבחר מספר אפשרות: ").strip())
+                if 1 <= choice <= len(nikud_options):
+                    selected_nikud = nikud_options[choice - 1]
+                    return nikud_dict_from_nikud_name(name, selected_nikud)
+                elif choice == len(nikud_options) + 1:
+                    nikud_dict = get_manual_nikud(name)
+                    manual_nikud_name = apply_nikud_to_name(name, nikud_dict)
+                    names_manager.add_or_update_name(name, manual_nikud_name)
+                    print(f"✅ הניקוד נוסף למערכת!")
+                    return nikud_dict
+                else:
+                    print("⚠️ בחירה לא תקינה, נסה שוב.")
+            except ValueError:
+                print("⚠️ נא להזין מספר.")
+
+    else:
+        # השם לא נמצא במאגר
+        print(f"\n⚠️ שמך לא מופיע במאגר השמות הקיימים.")
+        print("אנא הזן את ניקוד שמך באופן ידני:")
+        nikud_dict = get_manual_nikud(name)
+        manual_nikud_name = apply_nikud_to_name(name, nikud_dict)
+        names_manager.add_or_update_name(name, manual_nikud_name)
+        print(f"✅ שמך נוסף למאגר עם הניקוד שהוזן!")
+        return nikud_dict
+
+
+def get_manual_nikud(name: str) -> dict:
+    """
+    אוסף ניקוד באופן ידני מהמשתמש.
+
+    Args:
+        name: השם
+
+    Returns:
+        דיקשנרי ניקוד
+    """
+    nikud_dict = {}
+    print("\n--- איסוף ניקוד השם ---")
+    for i, letter in enumerate(name):
+        nikud = input(f"מהו הניקוד של האות '{letter}'? (אם אין ניקוד, השאר ריק): ").strip()
+        if nikud:
+            nikud_dict[i + 1] = nikud
+    return nikud_dict
+
+
+def apply_nikud_to_name(name: str, nikud_dict: dict) -> str:
+    """
+    מחבר שם עם דיקשנרי ניקוד ליצירת שם מנוקד.
+
+    Args:
+        name: השם המקורי
+        nikud_dict: דיקשנרי הניקוד (1-based indices)
+
+    Returns:
+        שם מנוקד
+    """
+    result = []
+    for i, char in enumerate(name, 1):
+        result.append(char)
+        if i in nikud_dict:
+            result.append(nikud_dict[i])
+    return ''.join(result)
 
 
 def get_user_input_combined():
@@ -56,13 +163,8 @@ def get_user_input_combined():
         except ValueError:
             print("⚠️ פורמט קואורדינטות לא תקין. נמשיך ללא מיקום מדויק.")
 
-    # ניקוד
-    nikud_dict = {}
-    print("\n--- איסוף ניקוד השם ---")
-    for i, letter in enumerate(name):
-        nikud = input(f"מהו הניקוד של האות '{letter}'? (אם אין ניקוד, השאר ריק): ").strip()
-        if nikud:
-            nikud_dict[i + 1] = nikud
+    # ניקוד - שימוש במנהל השמות
+    nikud_dict = get_nikud_for_name(name)
 
     return User(name, birthdate, birthtime, location), nikud_dict
 

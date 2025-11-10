@@ -23,6 +23,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from bot.bot_utils import get_main_menu_keyboard, delete_user_profile
+from names_manager import NamesManager
 from bot.handlers import (
     name_analysis_start,
     name_analysis_name,
@@ -70,6 +71,13 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+# הגדרת נתיב קובץ השמות
+PROJECT_DIR = os.path.abspath(os.path.join(current_dir, '..', '..'))
+NAMES_FILE = os.path.join(PROJECT_DIR, 'data', 'names.txt')
+
+# אתחול מנהל השמות
+names_manager = NamesManager(NAMES_FILE)
+
 MAIN_MENU = 0
 
 
@@ -77,6 +85,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """תגובה לפקודת /start - מציג תפריט ראשי"""
     user_id = update.effective_user.id
     context.user_data.clear()
+
+    # שמירת מנהל השמות ב-context
+    context.bot_data['names_manager'] = names_manager
 
     from bot.bot_utils import get_user_profile
     profile = get_user_profile(user_id)
@@ -184,6 +195,7 @@ def main():
             ],
             NAME_ANALYSIS_NIKUD: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, name_analysis_nikud),
+                CallbackQueryHandler(name_analysis_nikud),  # להתמיכה בבחירת ניקוד דרך כפתורים
                 CommandHandler("start", start)
             ],
             CHART_NAME: [
