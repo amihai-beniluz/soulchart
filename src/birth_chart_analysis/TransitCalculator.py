@@ -214,7 +214,8 @@ class TransitCalculator:
                                     'exact_dates': [
                                         {
                                             'date': ex['date'] if isinstance(ex['date'], str) else ex['date'].isoformat(),
-                                            'is_retrograde': ex['is_retrograde']
+                                            'is_retrograde': ex['is_retrograde'],
+                                            'actual_orb': ex['actual_orb']
                                         }
                                         for ex in cycle['exact_dates']
                                     ],
@@ -310,7 +311,8 @@ class TransitCalculator:
                                     'exact_dates': [
                                         {
                                             'date': ex['date'] if isinstance(ex['date'], str) else ex['date'].isoformat(),
-                                            'is_retrograde': ex['is_retrograde']
+                                            'is_retrograde': ex['is_retrograde'],
+                                            'actual_orb': ex['actual_orb']
                                         }
                                         for ex in cycle['exact_dates']
                                     ],

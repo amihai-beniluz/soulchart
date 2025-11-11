@@ -417,14 +417,21 @@ def format_future_transits_report(result: dict, sort_mode: str, is_interpreted: 
                 first_exact = exact_dates[0]
                 exact_formatted = format_datetime(first_exact.get('date', 'N/A'))
                 retro_marker = " ⟲" if first_exact.get('is_retrograde') else ""
-                report.append(f"    - שיא ההיבט: {exact_formatted}{retro_marker}")
+                actual_orb = first_exact.get('actual_orb') if first_exact.get('actual_orb') > 0.1 else 0
+                orb_text = f" (orb: {actual_orb})"
+                report.append(f"    - שיא ההיבט: {exact_formatted}{retro_marker}{orb_text}")
             else:
                 # מספר שיאים
+                exact_dates = sorted(exact_dates,
+                                     key=lambda ex: ex.get('date', '9999-12-31'))
+
                 report.append(f"    - שיאי ההיבט:")
                 for ex in exact_dates:
                     ex_formatted = format_datetime(ex.get('date', 'N/A'))
                     retro_mark = " ⟲" if ex.get('is_retrograde') else ""
-                    report.append(f"        {ex_formatted}{retro_mark}")
+                    actual_orb = ex.get('actual_orb') if ex.get('actual_orb') > 0.1 else 0
+                    orb_text = f" (orb: {actual_orb})"
+                    report.append(f"        {ex_formatted}{retro_mark}{orb_text}")
         else:
             report.append(f"    - שיא ההיבט: N/A")
 
