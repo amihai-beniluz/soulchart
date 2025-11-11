@@ -260,9 +260,23 @@ def format_future_transits_report(result: dict, sort_mode: str, is_interpreted: 
             report.append(f"📅 {format_datetime(event['date_str'])} - {event['type']}")
             report.append(f"  {event['aspect_line']}")
 
+            # הוספת תקופת פעילות
+            aspect_data = event['aspect_data']
+            lifecycle = aspect_data.get('lifecycle', {})
+            if lifecycle.get('start') and lifecycle.get('end'):
+                start_formatted = format_datetime(lifecycle['start'])
+                end_formatted = format_datetime(lifecycle['end'])
+                duration_str = format_duration_precise(lifecycle['start'], lifecycle['end'])
+
+                passes_suffix = ""
+                num_passes = lifecycle.get('num_passes', 0)
+                if num_passes > 1:
+                    passes_suffix = f", {num_passes} מעברים"
+
+                report.append(f"  תקופת פעילות: {start_formatted} - {end_formatted} ({duration_str}{passes_suffix})")
+
             # הוספת פרשנות אם נדרש
             if is_interpreted and chart_data:
-                aspect_data = event['aspect_data']
                 analysis_lines = get_interpretation_lines(aspect_data, chart_data)
                 report.extend(analysis_lines)
             elif is_interpreted:
@@ -303,24 +317,22 @@ def format_future_transits_report(result: dict, sort_mode: str, is_interpreted: 
         else:
             report.append(f"    - תקופת פעילות: N/A - N/A (משך לא ידוע)")
 
-        # שיא ההיבט
+        # שיאי ההיבט
         exact_dates = lifecycle.get('exact_dates')
         if exact_dates:
-            first_exact = exact_dates[0]
-            exact_formatted = format_datetime(first_exact.get('date', 'N/A'))
-            retro_marker = " ⟲" if first_exact.get('is_retrograde') else ""
-
-            report.append(f"    - שיא ההיבט: {exact_formatted}{retro_marker}")
-
-            # שיאים נוספים
-            if len(exact_dates) > 1:
-                other_exacts = []
-                for ex in exact_dates[1:]:
+            if len(exact_dates) == 1:
+                # שיא בודד
+                first_exact = exact_dates[0]
+                exact_formatted = format_datetime(first_exact.get('date', 'N/A'))
+                retro_marker = " ⟲" if first_exact.get('is_retrograde') else ""
+                report.append(f"    - שיא ההיבט: {exact_formatted}{retro_marker}")
+            else:
+                # מספר שיאים
+                report.append(f"    - שיאי ההיבט:")
+                for ex in exact_dates:
                     ex_formatted = format_datetime(ex.get('date', 'N/A'))
                     retro_mark = " ⟲" if ex.get('is_retrograde') else ""
-                    other_exacts.append(f"{ex_formatted}{retro_mark}")
-
-                report.append(f"    - שיאים נוספים: {', '.join(other_exacts)}")
+                    report.append(f"        {ex_formatted}{retro_mark}")
         else:
             report.append(f"    - שיא ההיבט: N/A")
 

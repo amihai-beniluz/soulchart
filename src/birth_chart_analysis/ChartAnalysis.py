@@ -185,6 +185,49 @@ class ChartAnalysis:
         if not is_natal_only:
             from datetime import datetime
 
+            # הוסיפי את זה אחרי: if not is_natal_only:
+            print("\n" + "=" * 80)
+            print("🔍 DEBUG - בדיקת מבנה הנתונים")
+            print("=" * 80)
+
+            if len(aspects_list) > 0:
+                first_aspect = aspects_list[0]
+                print(f"\nדוגמה - היבט ראשון:")
+                print(f"  planet1: {first_aspect.get('planet1')}")
+                print(f"  planet2: {first_aspect.get('planet2')}")
+                print(f"  aspect_name_eng: {first_aspect.get('aspect_name_eng')}")
+
+                lifecycle = first_aspect.get('lifecycle')
+                print(f"\n  lifecycle exists: {lifecycle is not None}")
+
+                if lifecycle:
+                    print(f"  lifecycle type: {type(lifecycle)}")
+                    print(f"  lifecycle keys: {lifecycle.keys() if isinstance(lifecycle, dict) else 'N/A'}")
+
+                    if 'exact_dates' in lifecycle:
+                        exact_dates = lifecycle['exact_dates']
+                        print(f"\n  exact_dates type: {type(exact_dates)}")
+                        print(f"  exact_dates length: {len(exact_dates) if exact_dates else 0}")
+
+                        if exact_dates and len(exact_dates) > 0:
+                            first_exact = exact_dates[0]
+                            print(f"\n  first exact_date structure:")
+                            print(f"    type: {type(first_exact)}")
+                            print(f"    keys: {first_exact.keys() if isinstance(first_exact, dict) else 'N/A'}")
+
+                            if isinstance(first_exact, dict) and 'date' in first_exact:
+                                date_value = first_exact['date']
+                                print(f"    date type: {type(date_value)}")
+                                print(f"    date value: {date_value}")
+
+                                # נסה להדפיס את כל התאריכים
+                                print(f"\n  כל התאריכים (לפני מיון):")
+                                for i, ex in enumerate(exact_dates[:3]):  # רק 3 ראשונים
+                                    d = ex.get('date')
+                                    print(f"    [{i}] {d} (type: {type(d).__name__})")
+
+            print("=" * 80 + "\n")
+
             # ✅ ללא חישוב מחדש - רק מיון וסינון
             aspects_with_lifecycle = []
 
@@ -309,13 +352,40 @@ class ChartAnalysis:
                         lifecycle_str += f", {lifecycle['num_passes']} מעברים"
                     lifecycle_str += ")"
 
-                    if lifecycle['exact_dates']:
-                        exact_parts = []
-                        for ex in lifecycle['exact_dates']:
-                            retro_marker = " ⟲" if ex['is_retrograde'] else ""
-                            exact_parts.append(f"{ex['date']:%d.%m.%Y %H:%M}{retro_marker}")
+                    # 🔧 תיקון בקובץ ChartAnalysis.py
+                    # החלף את השורות 151-166 (בלוק המיון) בקוד הבא:
 
-                        exact_str = f"    - שיא ההיבט: {', '.join(exact_parts)}"
+                    if lifecycle['exact_dates']:
+                        # ✅ תיקון: המר קודם ל-datetime אם צריך, ואז מיין
+                        exact_dates_for_sort = []
+                        for ex in lifecycle['exact_dates']:
+                            date_obj = ex['date']
+                            # המרה ל-datetime אם זה string
+                            if isinstance(date_obj, str):
+                                date_obj = datetime.fromisoformat(date_obj)
+                            exact_dates_for_sort.append({
+                                'date': date_obj,
+                                'is_retrograde': ex['is_retrograde']
+                            })
+
+                        # ✅ מיון כרונולוגי של כל השיאים
+                        sorted_exact_dates = sorted(
+                            exact_dates_for_sort,
+                            key=lambda x: x['date']
+                        )
+
+                        if len(sorted_exact_dates) == 1:
+                            # שיא בודד
+                            ex = sorted_exact_dates[0]
+                            retro_marker = " ⟲" if ex['is_retrograde'] else ""
+                            exact_str = f"    - שיא ההיבט: {ex['date']:%d.%m.%Y %H:%M}{retro_marker}"
+                        else:
+                            # מספר שיאים
+                            exact_str = "    - שיאי ההיבט:"
+
+                            for ex in sorted_exact_dates:
+                                retro_marker = " ⟲" if ex['is_retrograde'] else ""
+                                exact_str += f"\n        {ex['date']:%d.%m.%Y %H:%M}{retro_marker}"
 
                 # הדפסה
                 p1_type_str = " (לידה)"

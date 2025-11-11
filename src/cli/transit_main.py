@@ -1,17 +1,14 @@
 """
-Handler לניתוח טרנזיטים בבוט הטלגרם - תואם ללוגיקה של הבוט הישן.
+סקריפט CLI לחישוב וניתוח טרנזיטים אסטרולוגיים.
 """
 import os
 import sys
-import logging
 from datetime import datetime, timedelta
-from io import BytesIO
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationHandler
+import traceback
 
 # הוספת src לנתיב
 current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.abspath(os.path.join(current_dir, '..', '..'))
+parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -20,73 +17,168 @@ from birth_chart_analysis.ChartAnalysis import ChartAnalysis
 from birth_chart_analysis.TransitCalculator import TransitCalculator
 from birth_chart_analysis.CalculationEngine import calculate_chart_positions, calculate_current_positions
 from birth_chart_analysis.BirthChartDrawer import draw_and_save_biwheel_chart
-from bot.bot_utils import save_user_input, get_main_menu_keyboard, get_user_profile, save_user_profile
+from core import (
+    write_results_to_file,
+    get_validated_date,
+    get_validated_time,
+    get_location_input,
+    get_interpretation_choice
+)
 
-logger = logging.getLogger(__name__)
-
-# מצבי שיחה - ממשיכים מאחרי CHART_INTERPRETATION (7)
-TRANSIT_NAME = 8
-TRANSIT_BIRTH_DATE = 9
-TRANSIT_BIRTH_TIME = 10
-TRANSIT_BIRTH_LOCATION = 11
-TRANSIT_CURRENT_LOCATION = 12
-TRANSIT_MODE = 13
-TRANSIT_INTERPRETATION = 14
-TRANSIT_FUTURE_DAYS = 15
-TRANSIT_FUTURE_SORT = 16
-MAIN_MENU = 0
-
-# נתיב לשמירת תוצאות
-MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODULE_DIR = os.path.dirname(__file__)
 PROJECT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir, os.pardir))
 TRANSITS_DIR = os.path.join(PROJECT_DIR, 'output', 'transits')
 
 
-# ============================================================================
-# פונקציות עזר לעיצוב דוח
-# ============================================================================
+def get_birth_data_input():
+    """אוסף את נתוני הלידה הנדרשים (תאריך, שעה, מיקום)."""
+    print("\n--- איסוף נתוני לידה (נטאל) ---\n")
 
-def get_interpretation_lines(aspect, chart_data):
-    """פונקציית עזר להפקת שורות הפרשנות"""
+    name = input("הכנס שם המשתמש (לצורך שמירת הקובץ): ").strip() or "User"
+    birthdate = get_validated_date("הכנס תאריך לידה (פורמט YYYY-MM-DD): ")
+    birthtime = get_validated_time("הכנס שעת לידה (פורמט HH:MM): ", is_optional=False)
 
-    PLANET_NAMES_ENG = {
-        'שמש': 'Sun', 'ירח': 'Moon', 'מרקורי': 'Mercury',
-        'ונוס': 'Venus', 'מאדים': 'Mars', 'צדק': 'Jupiter',
-        'שבתאי': 'Saturn', 'אורנוס': 'Uranus', 'נפטון': 'Neptune',
-        'פלוטו': 'Pluto', 'ראש דרקון': 'North Node', 'לילית': 'Lilith',
-        'כירון': 'Chiron', 'אופק (AC)': 'AC', 'רום שמיים (MC)': 'MC',
-        'פורטונה': 'Fortune', 'ורטקס': 'Vertex'
-    }
+    print("\n--- נתוני מיקום לידה ---")
+    location = get_location_input(
+        single_prompt="הכנס את מקום הלידה (Latitude, Longitude): "
+    )
 
-    natal_p = aspect.get('natal_planet', 'N/A')
-    transit_p = aspect.get('transit_planet', 'N/A')
-    aspect_name_eng = aspect.get('aspect_type', 'N/A')
+    user = User(name, birthdate, birthtime, location)
+    return user
 
-    p1_eng = PLANET_NAMES_ENG.get(natal_p, natal_p)
-    p2_eng = PLANET_NAMES_ENG.get(transit_p, transit_p)
 
-    key = f"Natal {p1_eng} {aspect_name_eng} Transit {p2_eng}"
-    aspects_transit_data = chart_data.get('aspects_transit', {})
-    analysis = aspects_transit_data.get(key)
+def get_current_location_input():
+    """אוסף את נתוני המיקום הנוכחי."""
+    print("\n--- איסוף מיקום נוכחי ---\n")
+    return get_location_input(
+        single_prompt="הכנס מיקום נוכחי (Latitude, Longitude): "
+    )
 
-    lines = []
-    if analysis:
-        lines.append(f"\n📖 פרשנות:\n{analysis}")
-    else:
-        lines.append(f"\n⚠️ פרשנות להיבט זה לא נמצאה במאגר (מפתח: {key})")
 
-    return lines
+def get_mode_selection():
+    """בחירת מצב הרצה."""
+    print("\n" + "=" * 80)
+    print("בחר מצב הרצה:")
+    print("=" * 80)
+    print("1. ניתוח טרנזיטים נוכחיים")
+    print("2. חישוב טרנזיטים עתידיים")
+    print("=" * 80)
+
+    while True:
+        choice = input("\nהכנס בחירה (1/2): ").strip()
+        if choice in ['1', '2']:
+            return choice
+        print("❌ בחירה לא תקינה. אנא הזן 1 או 2")
+
+
+def run_current_transits(user: User, current_location: tuple, is_interpreted: bool = True):
+    """מצב 1: ניתוח טרנזיטים נוכחיים"""
+    print("\n--- ביצוע ניתוח מעברים נוכחיים ---\n")
+    try:
+        chart_analysis = ChartAnalysis(user)
+
+        birth_datetime = datetime.combine(user.birthdate, user.birthtime)
+        natal_chart_data = calculate_chart_positions(
+            birth_datetime,
+            user.location[0],
+            user.location[1]
+        )
+
+        current_datetime = datetime.now()
+        transit_chart_data = calculate_current_positions(
+            current_datetime,
+            current_location[0],
+            current_location[1]
+        )
+
+        transit_result = chart_analysis.analyze_transits_and_aspects(
+            current_location,
+            is_interpreted=is_interpreted
+        )
+
+        suffix = "_interpreted" if is_interpreted else "_positions"
+        birth_time_str = user.birthtime.strftime('%H-%M')
+        filename_prefix = f"Natal_{user.birthdate}_at_{birth_time_str}_Transit_to_{current_datetime.strftime('%Y-%m-%d_%H-%M')}{suffix}"
+
+        write_results_to_file(TRANSITS_DIR, filename_prefix, transit_result, ".txt")
+
+        image_filename = os.path.join(TRANSITS_DIR, f"{filename_prefix}_biwheel.png")
+        draw_and_save_biwheel_chart(
+            natal_chart_data,
+            transit_chart_data,
+            user,
+            current_datetime,
+            image_filename
+        )
+
+    except Exception as e:
+        print(f"\n❌ אירעה שגיאה בניתוח טרנזיטים נוכחיים: {e}")
+        traceback.print_exc()
+
+
+def run_future_transits(user: User, current_location: tuple, is_interpreted: bool = True):
+    """מצב 2: חישוב טרנזיטים עתידיים"""
+    print("\n--- חישוב טרנזיטים עתידיים ---\n")
+
+    days_str = input("כמה ימים קדימה לחשב? (ברירת מחדל: 30): ").strip()
+    try:
+        days_ahead = int(days_str) if days_str else 30
+    except ValueError:
+        print("⚠️ ערך לא תקין, משתמש ב-30 ימים")
+        days_ahead = 30
+
+    print("\n" + "=" * 80)
+    print("בחר סוג מיון:")
+    print("=" * 80)
+    print("1. לפי משך זמן ההיבט (מהקצר לארוך)")
+    print("2. כרונולוגי לפי רגע תחילת ההיבט")
+    print("3. כרונולוגי לפי אירועים (מומלץ!)")
+    print("=" * 80)
+
+    while True:
+        sort_choice = input("\nהכנס בחירה (1/2/3, ברירת מחדל: 1): ").strip()
+        if sort_choice in ['1', '2', '3', '']:
+            break
+        print("❌ בחירה לא תקינה")
+
+    sort_mode_map = {'1': 'duration', '2': 'chronological', '3': 'events', '': 'duration'}
+    sort_mode = sort_mode_map[sort_choice if sort_choice else '']
+
+    try:
+        calculator = TransitCalculator(user)
+        start_date = datetime.now()
+        end_date = start_date + timedelta(days=days_ahead)
+
+        print(f"\n⏳ מחשב טרנזיטים ל-{days_ahead} ימים קדימה...")
+        result = calculator.calculate_aspects_in_range(
+            start_date,
+            end_date,
+            current_location
+        )
+
+        report_lines = format_future_transits_report(result, sort_mode, is_interpreted)
+
+        suffix = "_interpreted" if is_interpreted else "_positions"
+        text_filename = f"future_transits_{user.name}_{datetime.now():%Y%m%d_%H%M}{suffix}.txt"
+
+        write_results_to_file(TRANSITS_DIR, text_filename.replace('.txt', ''), report_lines, ".txt")
+
+    except Exception as e:
+        print(f"\n❌ אירעה שגיאה בחישוב טרנזיטים עתידיים: {e}")
+        traceback.print_exc()
 
 
 def format_future_transits_report(result: dict, sort_mode: str, is_interpreted: bool) -> list:
     """
     ממיר את תוצאות ה-TransitCalculator לדוח טקסט קריא ומפורט.
+    הותאם לטפל ב-sort_mode (duration, chronological, events).
 
     :param result: תוצאות החישוב מ-TransitCalculator
     :param sort_mode: מצב המיון הרצוי ('duration', 'chronological', 'events')
     :param is_interpreted: האם להוסיף פרשנות אסטרולוגית
     :return: רשימת שורות לדוח
     """
+    from datetime import datetime
 
     # מיפוי שמות היבטים לעברית
     ASPECTS_HEB = {
@@ -260,9 +352,23 @@ def format_future_transits_report(result: dict, sort_mode: str, is_interpreted: 
             report.append(f"📅 {format_datetime(event['date_str'])} - {event['type']}")
             report.append(f"  {event['aspect_line']}")
 
+            # הוספת תקופת פעילות
+            aspect_data = event['aspect_data']
+            lifecycle = aspect_data.get('lifecycle', {})
+            if lifecycle.get('start') and lifecycle.get('end'):
+                start_formatted = format_datetime(lifecycle['start'])
+                end_formatted = format_datetime(lifecycle['end'])
+                duration_str = format_duration_precise(lifecycle['start'], lifecycle['end'])
+
+                passes_suffix = ""
+                num_passes = lifecycle.get('num_passes', 0)
+                if num_passes > 1:
+                    passes_suffix = f", {num_passes} מעברים"
+
+                report.append(f"  תקופת פעילות: {start_formatted} - {end_formatted} ({duration_str}{passes_suffix})")
+
             # הוספת פרשנות אם נדרש
             if is_interpreted and chart_data:
-                aspect_data = event['aspect_data']
                 analysis_lines = get_interpretation_lines(aspect_data, chart_data)
                 report.extend(analysis_lines)
             elif is_interpreted:
@@ -303,24 +409,22 @@ def format_future_transits_report(result: dict, sort_mode: str, is_interpreted: 
         else:
             report.append(f"    - תקופת פעילות: N/A - N/A (משך לא ידוע)")
 
-        # שיא ההיבט
+        # שיאי ההיבט
         exact_dates = lifecycle.get('exact_dates')
         if exact_dates:
-            first_exact = exact_dates[0]
-            exact_formatted = format_datetime(first_exact.get('date', 'N/A'))
-            retro_marker = " ⟲" if first_exact.get('is_retrograde') else ""
-
-            report.append(f"    - שיא ההיבט: {exact_formatted}{retro_marker}")
-
-            # שיאים נוספים
-            if len(exact_dates) > 1:
-                other_exacts = []
-                for ex in exact_dates[1:]:
+            if len(exact_dates) == 1:
+                # שיא בודד
+                first_exact = exact_dates[0]
+                exact_formatted = format_datetime(first_exact.get('date', 'N/A'))
+                retro_marker = " ⟲" if first_exact.get('is_retrograde') else ""
+                report.append(f"    - שיא ההיבט: {exact_formatted}{retro_marker}")
+            else:
+                # מספר שיאים
+                report.append(f"    - שיאי ההיבט:")
+                for ex in exact_dates:
                     ex_formatted = format_datetime(ex.get('date', 'N/A'))
                     retro_mark = " ⟲" if ex.get('is_retrograde') else ""
-                    other_exacts.append(f"{ex_formatted}{retro_mark}")
-
-                report.append(f"    - שיאים נוספים: {', '.join(other_exacts)}")
+                    report.append(f"        {ex_formatted}{retro_mark}")
         else:
             report.append(f"    - שיא ההיבט: N/A")
 
@@ -341,488 +445,56 @@ def format_future_transits_report(result: dict, sort_mode: str, is_interpreted: 
     return report
 
 
-# ============================================================================
-# Handlers - זהה לבוט הישן
-# ============================================================================
+def get_interpretation_lines(aspect, chart_data):
+    """פונקציית עזר להפקת שורות הפרשנות"""
 
-async def transit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """מתחיל תהליך טרנזיטים - מותאם לבוט הישן"""
-    query = update.callback_query
-    await query.answer()
-
-    user_id = update.effective_user.id
-    profile = get_user_profile(user_id)
-
-    # אם יש פרופיל - עוברים ישירות למיקום נוכחי
-    if profile:
-        context.user_data['transit_name'] = profile['name']
-        context.user_data['transit_birthdate'] = profile['birthdate']
-        context.user_data['transit_birthtime'] = profile['birthtime']
-        context.user_data['transit_birth_location'] = profile['birth_location']
-
-        await query.edit_message_text(
-            f"🌍 *מפת מעברים (טרנזיטית)*\n\n"
-            f"✅ משתמש מזוהה: *{profile['name']}*\n"
-            f"📅 {profile['birthdate']} | ⏰ {profile['birthtime']}\n"
-            f"📍 לידה: {profile['birth_location'][0]}°, {profile['birth_location'][1]}°\n\n"
-            "כעת הזן את המיקום הנוכחי שלך:\n"
-            "`Latitude, Longitude`\n\n"
-            "לדוגמה: `32.08, 34.78`\n"
-            "(אם אתה באותו מקום, שלח את אותן קואורדינטות)",
-            parse_mode='Markdown'
-        )
-        return TRANSIT_CURRENT_LOCATION
-    else:
-        # אין פרופיל - מתחילים מאיסוף נתונים
-        await query.edit_message_text(
-            "🌍 *מפת מעברים (טרנזיטית)*\n\n"
-            "ניתוח אסטרולוגי של המעברים הנוכחיים או העתידיים.\n\n"
-            "נתחיל באיסוף נתוני הלידה שלך.\n"
-            "אנא שלח את השם המלא:",
-            parse_mode='Markdown'
-        )
-        return TRANSIT_NAME
-
-
-async def transit_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """מקבל שם"""
-    name = update.message.text.strip()
-
-    if not name:
-        await update.message.reply_text("❌ השם לא יכול להיות ריק. נסה שוב:")
-        return TRANSIT_NAME
-
-    context.user_data['transit_name'] = name
-
-    await update.message.reply_text(
-        f"✅ שם התקבל: *{name}*\n\n"
-        "כעת הזן את תאריך הלידה בפורמט:\n"
-        "`YYYY-MM-DD`\n\n"
-        "לדוגמה: `1990-05-15`",
-        parse_mode='Markdown'
-    )
-    return TRANSIT_BIRTH_DATE
-
-
-async def transit_birth_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """מקבל תאריך לידה"""
-    date_str = update.message.text.strip()
-
-    try:
-        birthdate = datetime.strptime(date_str, "%Y-%m-%d").date()
-        context.user_data['transit_birthdate'] = birthdate
-
-        await update.message.reply_text(
-            f"✅ תאריך התקבל: *{birthdate}*\n\n"
-            "כעת הזן את שעת הלידה בפורמט:\n"
-            "`HH:MM`\n\n"
-            "לדוגמה: `14:30`",
-            parse_mode='Markdown'
-        )
-        return TRANSIT_BIRTH_TIME
-
-    except ValueError:
-        await update.message.reply_text(
-            "❌ פורמט תאריך לא תקין!\n"
-            "אנא הזן בפורמט: `YYYY-MM-DD`\n"
-            "לדוגמה: `1990-05-15`",
-            parse_mode='Markdown'
-        )
-        return TRANSIT_BIRTH_DATE
-
-
-async def transit_birth_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """מקבל שעת לידה"""
-    time_str = update.message.text.strip()
-
-    try:
-        birthtime = datetime.strptime(time_str, "%H:%M").time()
-        context.user_data['transit_birthtime'] = birthtime
-
-        await update.message.reply_text(
-            f"✅ שעה התקבלה: *{birthtime}*\n\n"
-            "כעת הזן את מיקום הלידה בפורמט:\n"
-            "`Latitude, Longitude`\n\n"
-            "לדוגמה: `32.08, 34.78`",
-            parse_mode='Markdown'
-        )
-        return TRANSIT_BIRTH_LOCATION
-
-    except ValueError:
-        await update.message.reply_text(
-            "❌ פורמט שעה לא תקין!\n"
-            "אנא הזן בפורמט: `HH:MM`\n"
-            "לדוגמה: `14:30`",
-            parse_mode='Markdown'
-        )
-        return TRANSIT_BIRTH_TIME
-
-
-async def transit_birth_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """מקבל מיקום לידה"""
-    location_str = update.message.text.strip()
-
-    try:
-        lat_str, lon_str = location_str.split(',')
-        latitude = float(lat_str.strip())
-        longitude = float(lon_str.strip())
-
-        if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
-            raise ValueError("Coordinates out of range")
-
-        context.user_data['transit_birth_location'] = (latitude, longitude)
-
-        await update.message.reply_text(
-            f"✅ מיקום לידה התקבל: *{latitude}°, {longitude}°*\n\n"
-            "כעת הזן את המיקום הנוכחי שלך בפורמט:\n"
-            "`Latitude, Longitude`\n\n"
-            "לדוגמה: `32.08, 34.78`\n"
-            "(אם אתה עדיין באותו מקום, שלח את אותם קואורדינטות)",
-            parse_mode='Markdown'
-        )
-        return TRANSIT_CURRENT_LOCATION
-
-    except (ValueError, AttributeError):
-        await update.message.reply_text(
-            "❌ פורמט מיקום לא תקין!\n"
-            "אנא הזן בפורמט: `Latitude, Longitude`\n"
-            "לדוגמה: `32.08, 34.78`",
-            parse_mode='Markdown'
-        )
-        return TRANSIT_BIRTH_LOCATION
-
-
-async def transit_current_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """מקבל מיקום נוכחי"""
-    location_str = update.message.text.strip()
-
-    try:
-        lat_str, lon_str = location_str.split(',')
-        latitude = float(lat_str.strip())
-        longitude = float(lon_str.strip())
-
-        if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
-            raise ValueError("Coordinates out of range")
-
-        context.user_data['transit_current_location'] = (latitude, longitude)
-
-        # בחירת מצב: נוכחי או עתידי
-        keyboard = [
-            [InlineKeyboardButton("🌍 טרנזיטים נוכחיים (מה קורה עכשיו)", callback_data="transit_current")],
-            [InlineKeyboardButton("🔮 טרנזיטים עתידיים (תחזית)", callback_data="transit_future")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(
-            f"✅ מיקום נוכחי התקבל: *{latitude}°, {longitude}°*\n\n"
-            "כעת בחר את סוג הניתוח:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-        return TRANSIT_MODE
-
-    except (ValueError, AttributeError):
-        await update.message.reply_text(
-            "❌ פורמט מיקום לא תקין!\n"
-            "אנא הזן בפורמט: `Latitude, Longitude`\n"
-            "לדוגמה: `32.08, 34.78`",
-            parse_mode='Markdown'
-        )
-        return TRANSIT_CURRENT_LOCATION
-
-
-async def transit_mode_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """בחירת מצב"""
-    query = update.callback_query
-    await query.answer()
-
-    context.user_data['transit_mode'] = query.data
-
-    # בחירת סוג דוח
-    keyboard = [
-        [InlineKeyboardButton("📖 דוח מפורט עם פרשנות", callback_data="transit_interpreted_yes")],
-        [InlineKeyboardButton("📊 רק מיקומים (ללא פרשנות)", callback_data="transit_interpreted_no")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    mode_text = "טרנזיטים נוכחיים" if query.data == "transit_current" else "טרנזיטים עתידיים"
-
-    await query.edit_message_text(
-        f"✅ נבחר: *{mode_text}*\n\n"
-        "כעת בחר את סוג הדוח:",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
-    return TRANSIT_INTERPRETATION
-
-
-async def transit_interpretation_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """בחירת סוג דוח"""
-    query = update.callback_query
-    await query.answer()
-
-    is_interpreted = (query.data == "transit_interpreted_yes")
-    context.user_data['transit_is_interpreted'] = is_interpreted
-
-    transit_mode = context.user_data['transit_mode']
-
-    # אם זה טרנזיטים עתידיים - צריך לשאול כמה ימים
-    if transit_mode == "transit_future":
-        await query.edit_message_text(
-            "🔮 *טרנזיטים עתידיים*\n\n"
-            "כמה ימים קדימה לחשב?\n"
-            "שלח מספר (ברירת מחדל: 30)\n\n"
-            "לדוגמה: `30` או `90` או `365`",
-            parse_mode='Markdown'
-        )
-        return TRANSIT_FUTURE_DAYS
-    else:
-        # טרנזיטים נוכחיים - מתחילים מיד
-        await query.edit_message_text(
-            "⏳ מחשב טרנזיטים נוכחיים... אנא המתן..."
-        )
-        return await process_current_transits(query, context)
-
-
-async def transit_future_days(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """מקבל מספר ימים"""
-    days_str = update.message.text.strip()
-
-    try:
-        days_ahead = int(days_str) if days_str else 30
-        if days_ahead <= 0:
-            raise ValueError("Must be positive")
-
-        context.user_data['transit_days'] = days_ahead
-
-        # בחירת מיון
-        keyboard = [
-            [InlineKeyboardButton("⏱️ לפי משך זמן (קצר→ארוך)", callback_data="sort_duration")],
-            [InlineKeyboardButton("📅 כרונולוגי לפי היבט", callback_data="sort_chronological")],
-            [InlineKeyboardButton("🎯 כרונולוגי לפי אירועים (מומלץ!)", callback_data="sort_events")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(
-            f"✅ יחושב עבור *{days_ahead} ימים* קדימה\n\n"
-            "כעת בחר איך למיין את התוצאות:\n\n"
-            "💡 *מיון לפי אירועים* - מציג ציר זמן מלא\n"
-            "עם כל אירוע (כניסה/שיא/יציאה) בנפרד",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-        return TRANSIT_FUTURE_SORT
-
-    except ValueError:
-        await update.message.reply_text(
-            "❌ אנא הזן מספר שלם חיובי!\n"
-            "לדוגמה: `30` או `90`"
-        )
-        return TRANSIT_FUTURE_DAYS
-
-
-async def transit_future_sort(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """בחירת מיון ומבצע חישוב"""
-    query = update.callback_query
-    await query.answer()
-
-    # המרת callback_data ל-sort_mode
-    sort_mode_map = {
-        'sort_duration': 'duration',
-        'sort_chronological': 'chronological',
-        'sort_events': 'events'
+    PLANET_NAMES_ENG = {
+        'שמש': 'Sun', 'ירח': 'Moon', 'מרקורי': 'Mercury',
+        'ונוס': 'Venus', 'מאדים': 'Mars', 'צדק': 'Jupiter',
+        'שבתאי': 'Saturn', 'אורנוס': 'Uranus', 'נפטון': 'Neptune',
+        'פלוטו': 'Pluto', 'ראש דרקון': 'North Node', 'לילית': 'Lilith',
+        'כירון': 'Chiron', 'אופק (AC)': 'AC', 'רום שמיים (MC)': 'MC',
+        'פורטונה': 'Fortune', 'ורטקס': 'Vertex'
     }
-    sort_mode = sort_mode_map.get(query.data, 'duration')
-    context.user_data['transit_sort_mode'] = sort_mode
 
-    await query.edit_message_text(
-        "⏳ מחשב טרנזיטים עתידיים... אנא המתן (זה עשוי לקחת מספר שניות)..."
-    )
+    natal_p = aspect.get('natal_planet', 'N/A')
+    transit_p = aspect.get('transit_planet', 'N/A')
+    aspect_name_eng = aspect.get('aspect_type', 'N/A')
 
-    await process_future_transits(query, context)
-    return MAIN_MENU
+    p1_eng = PLANET_NAMES_ENG.get(natal_p, natal_p)
+    p2_eng = PLANET_NAMES_ENG.get(transit_p, transit_p)
 
+    # המפתח הוא בפורמט: Natal Sun Conjunction Transit Jupiter
+    key = f"Natal {p1_eng} {aspect_name_eng} Transit {p2_eng}"
+    aspects_transit_data = chart_data.get('aspects_transit', {})
+    analysis = aspects_transit_data.get(key)
 
-async def process_current_transits(query, context: ContextTypes.DEFAULT_TYPE):
-    """מעבד טרנזיטים נוכחיים"""
-    try:
-        name = context.user_data['transit_name']
-        birthdate = context.user_data['transit_birthdate']
-        birthtime = context.user_data['transit_birthtime']
-        birth_location = context.user_data['transit_birth_location']
-        current_location = context.user_data['transit_current_location']
-        is_interpreted = context.user_data['transit_is_interpreted']
+    lines = []
+    if analysis:
+        lines.append(f"\n📖 פרשנות:\n{analysis}")
+    else:
+        lines.append(f"\n⚠️ פרשנות להיבט זה לא נמצאה במאגר (מפתח: {key})")
 
-        user = User(name, birthdate, birthtime, birth_location)
-
-        birth_datetime = datetime.combine(birthdate, birthtime)
-        natal_chart_data = calculate_chart_positions(
-            birth_datetime,
-            birth_location[0],
-            birth_location[1]
-        )
-
-        current_datetime = datetime.now()
-        transit_chart_data = calculate_current_positions(
-            current_datetime,
-            current_location[0],
-            current_location[1]
-        )
-
-        chart_analysis = ChartAnalysis(user)
-        transit_result = chart_analysis.analyze_transits_and_aspects(
-            current_location,
-            is_interpreted=is_interpreted
-        )
-
-        suffix = "_interpreted" if is_interpreted else "_positions"
-        birth_time_str = birthtime.strftime('%H-%M')
-        filename_prefix = f"Natal_{birthdate}_at_{birth_time_str}_Transit_to_{current_datetime.strftime('%Y-%m-%d_%H-%M')}{suffix}"
-
-        report_filename = os.path.join(TRANSITS_DIR, f"{filename_prefix}.txt")
-        with open(report_filename, 'w', encoding='utf-8') as f:
-            f.writelines([line + '\n' for line in transit_result])
-
-        image_filename = os.path.join(TRANSITS_DIR, f"{filename_prefix}_biwheel.png")
-        draw_and_save_biwheel_chart(
-            natal_chart_data,
-            transit_chart_data,
-            user,
-            current_datetime,
-            image_filename
-        )
-
-        report_type = "מפורט עם פרשנות" if is_interpreted else "מיקומים בלבד"
-
-        with open(report_filename, 'rb') as f:
-            await query.message.reply_document(
-                document=f,
-                caption=f"✅ *ניתוח טרנזיטים נוכחיים של {name} הושלם!*\n\n"
-                        f"📄 סוג דוח: {report_type}\n"
-                        f"🌍 מיקום נוכחי: {current_location[0]}°, {current_location[1]}°\n"
-                        f"📅 {current_datetime.strftime('%Y-%m-%d %H:%M')}",
-                parse_mode='Markdown'
-            )
-
-        with open(image_filename, 'rb') as f:
-            await query.message.reply_photo(
-                photo=f,
-                caption=f"🖼️ *מפת Bi-Wheel: נטאל + טרנזיט נוכחי*\n\n"
-                        f"🔵 מעגל פנימי: מפת לידה\n"
-                        f"🟢 מעגל חיצוני: טרנזיטים נוכחיים",
-                parse_mode='Markdown'
-            )
-
-        user_id = query.from_user.id
-        await query.message.reply_text(
-            "לניתוח נוסף, בחר מהתפריט:",
-            reply_markup=get_main_menu_keyboard(user_id)
-        )
-
-        # שמירת פרופיל
-        save_user_profile(user_id, name, birthdate, birthtime, birth_location)
-
-        save_user_input(user_id, {
-            'type': 'current_transits',
-            'name': name,
-            'birthdate': str(birthdate),
-            'birthtime': str(birthtime),
-            'birth_location': birth_location,
-            'current_location': current_location,
-            'interpreted': is_interpreted
-        })
-
-    except Exception as e:
-        logger.error(f"Error in current transits: {e}", exc_info=True)
-        await query.message.reply_text(
-            f"❌ אירעה שגיאה בחישוב טרנזיטים נוכחיים:\n{str(e)}\n\n"
-            "אנא נסה שוב או פנה לתמיכה."
-        )
-
-    context.user_data.clear()
-    return MAIN_MENU
+    return lines
 
 
-async def process_future_transits(query, context: ContextTypes.DEFAULT_TYPE):
-    """מעבד טרנזיטים עתידיים"""
-    try:
-        name = context.user_data['transit_name']
-        birthdate = context.user_data['transit_birthdate']
-        birthtime = context.user_data['transit_birthtime']
-        birth_location = context.user_data['transit_birth_location']
-        current_location = context.user_data['transit_current_location']
-        is_interpreted = context.user_data['transit_is_interpreted']
-        days_ahead = context.user_data['transit_days']
-        sort_mode = context.user_data.get('transit_sort_mode', 'duration')
+def main():
+    """נקודת הכניסה הראשית."""
+    print("\n" + "=" * 80)
+    print("🌍 מערכת ניתוח טרנזיטים אסטרולוגיים")
+    print("=" * 80)
 
-        user = User(name, birthdate, birthtime, birth_location)
+    user = get_birth_data_input()
+    current_location = get_current_location_input()
 
-        calculator = TransitCalculator(user)
-        start_date = datetime.now()
-        end_date = start_date + timedelta(days=days_ahead)
+    mode = get_mode_selection()
+    is_interpreted = get_interpretation_choice()
 
-        result = calculator.calculate_aspects_in_range(
-            start_date,
-            end_date,
-            current_location
-        )
+    if mode == '1':
+        run_current_transits(user, current_location, is_interpreted)
+    else:
+        run_future_transits(user, current_location, is_interpreted)
 
-        report_lines = format_future_transits_report(result, sort_mode, is_interpreted)
 
-        suffix = "_interpreted" if is_interpreted else "_positions"
-        text_filename = f"future_transits_{name}_{datetime.now():%Y%m%d_%H%M}{suffix}.txt"
-        text_filepath = os.path.join(TRANSITS_DIR, text_filename)
-
-        with open(text_filepath, 'w', encoding='utf-8') as f:
-            for line in report_lines:
-                f.write(line + "\n")
-
-        report_type = "מפורט עם פרשנות" if is_interpreted else "מיקומים בלבד"
-        sort_type_map = {
-            'duration': 'לפי משך זמן',
-            'chronological': 'כרונולוגי (לפי היבט)',
-            'events': 'כרונולוגי (לפי אירועים)'
-        }
-        sort_type = sort_type_map.get(sort_mode, 'לפי משך זמן')
-
-        with open(text_filepath, 'rb') as f:
-            await query.message.reply_document(
-                document=f,
-                caption=f"✅ *תחזית טרנזיטים עתידיים של {name} הושלמה!*\n\n"
-                        f"📄 סוג דוח: {report_type}\n"
-                        f"📅 טווח: {days_ahead} ימים\n"
-                        f"🔢 סה\"כ היבטים: {result['metadata']['total_aspects']}\n"
-                        f"📊 מיון: {sort_type}",
-                parse_mode='Markdown'
-            )
-
-        user_id = query.from_user.id
-        await query.message.reply_text(
-            "לניתוח נוסף, בחר מהתפריט:",
-            reply_markup=get_main_menu_keyboard(user_id)
-        )
-
-        # שמירת פרופיל
-        save_user_profile(user_id, name, birthdate, birthtime, birth_location)
-
-        save_user_input(user_id, {
-            'type': 'future_transits',
-            'name': name,
-            'birthdate': str(birthdate),
-            'birthtime': str(birthtime),
-            'birth_location': birth_location,
-            'current_location': current_location,
-            'days_ahead': days_ahead,
-            'sort_mode': sort_mode,
-            'interpreted': is_interpreted
-        })
-
-    except Exception as e:
-        logger.error(f"Error in future transits: {e}", exc_info=True)
-        await query.message.reply_text(
-            f"❌ אירעה שגיאה בחישוב טרנזיטים עתידיים:\n{str(e)}\n\n"
-            "אנא נסה שוב או פנה לתמיכה."
-        )
-
-    context.user_data.clear()
-    return MAIN_MENU
+if __name__ == "__main__":
+    main()
