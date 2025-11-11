@@ -11,9 +11,9 @@ parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from birth_chart_analysis.ChartAnalysis import ChartAnalysis
-from birth_chart_analysis.BirthChartDrawer import draw_and_save_chart
-from birth_chart_analysis.CalculationEngine import calculate_chart_positions
+from chart_analysis.ChartAnalysis import ChartAnalysis
+from chart_analysis.ChartDrawer import draw_and_save_chart
+from chart_analysis.CalculationEngine import calculate_chart_positions
 from name_analysis.NameAnalysis import NameAnalysis
 from names_manager import NamesManager, nikud_dict_from_nikud_name
 from user import User

@@ -15,9 +15,9 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from user import User
-from birth_chart_analysis.ChartAnalysis import ChartAnalysis
-from birth_chart_analysis.BirthChartDrawer import draw_and_save_chart
-from birth_chart_analysis.CalculationEngine import calculate_chart_positions
+from chart_analysis.ChartAnalysis import ChartAnalysis
+from chart_analysis.ChartDrawer import draw_and_save_chart
+from chart_analysis.CalculationEngine import calculate_chart_positions
 from bot.bot_utils import (
     save_user_input, save_user_profile, get_main_menu_keyboard,
     CHARTS_DIR, get_user_profile

@@ -16,10 +16,10 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from user import User
-from birth_chart_analysis.ChartAnalysis import ChartAnalysis
-from birth_chart_analysis.TransitCalculator import TransitCalculator
-from birth_chart_analysis.CalculationEngine import calculate_chart_positions, calculate_current_positions
-from birth_chart_analysis.BirthChartDrawer import draw_and_save_biwheel_chart
+from chart_analysis.ChartAnalysis import ChartAnalysis
+from chart_analysis.TransitCalculator import TransitCalculator
+from chart_analysis.CalculationEngine import calculate_chart_positions, calculate_current_positions
+from chart_analysis.ChartDrawer import draw_and_save_biwheel_chart
 from bot.bot_utils import save_user_input, get_main_menu_keyboard, get_user_profile, save_user_profile
 
 logger = logging.getLogger(__name__)
@@ -159,7 +159,7 @@ def format_future_transits_report(result: dict, sort_mode: str, is_interpreted: 
     chart_data = None
     if is_interpreted:
         try:
-            from birth_chart_analysis.ChartDataLoaders import load_all_chart_data
+            from chart_analysis.ChartDataLoaders import load_all_chart_data
             chart_data = load_all_chart_data()
         except ImportError:
             report.append("❌ אירעה שגיאה: מודול ChartDataLoaders אינו מיובא כראוי, לא ניתן לטעון פרשנות.")
