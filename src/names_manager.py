@@ -163,6 +163,9 @@ def nikud_dict_from_nikud_name(name: str, nikud_name: str) -> Dict[int, str]:
         # שורוק = ו + דגש, נטפל בו בנפרד
     }
 
+    # תו דגש שיש להתעלם ממנו
+    DAGESH = '\u05BC'
+
     nikud_dict = {}
     nikud_idx = 0
     name_idx = 0
@@ -176,17 +179,28 @@ def nikud_dict_from_nikud_name(name: str, nikud_name: str) -> Dict[int, str]:
             collected_nikud = []
 
             # אוסף את כל תווי הניקוד שאחרי האות
-            while nikud_idx < len(nikud_name) and nikud_name[nikud_idx] in NIKUD_MAP:
+            while nikud_idx < len(nikud_name):
                 nikud_char = nikud_name[nikud_idx]
-                nikud_name_str = NIKUD_MAP[nikud_char]
-                collected_nikud.append(nikud_name_str)
-                nikud_idx += 1
 
-            # טיפול מיוחד בשורוק (ו + דגש)
-            if name[name_idx] == 'ו' and nikud_idx < len(nikud_name):
-                if nikud_name[nikud_idx] == '\u05BC':  # דגש
+                # טיפול מיוחד בשורוק (ו + דגש)
+                if name[name_idx] == 'ו' and nikud_char == DAGESH:
                     collected_nikud = ['שורוק']
                     nikud_idx += 1
+                    break
+
+                # התעלמות מדגש (למעט במקרה של שורוק)
+                if nikud_char == DAGESH:
+                    nikud_idx += 1
+                    continue
+
+                # אם זה ניקוד מוכר - נוסיף אותו
+                if nikud_char in NIKUD_MAP:
+                    nikud_name_str = NIKUD_MAP[nikud_char]
+                    collected_nikud.append(nikud_name_str)
+                    nikud_idx += 1
+                else:
+                    # לא ניקוד - מפסיקים את האיסוף
+                    break
 
             # שמירת הניקוד (רק אם יש)
             if collected_nikud:
