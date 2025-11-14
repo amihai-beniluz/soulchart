@@ -47,7 +47,7 @@ def get_nikud_for_name(name: str):
         print(f"\n✅ שמך מופיע במערכת עם הניקוד הבא: {nikud_name}")
         choice = input("האם הניקוד נכון? (כן/לא): ").strip().lower()
 
-        if choice in ['כן', 'yes', 'y', 'כ']:
+        if choice in ['כן', 'yes', 'y', 'כ'] or not choice:
             return nikud_dict_from_nikud_name(name, nikud_name)
         else:
             print("אנא הזן את ניקוד שמך באופן ידני:")

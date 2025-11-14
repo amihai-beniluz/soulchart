@@ -160,11 +160,25 @@ def nikud_dict_from_nikud_name(name: str, nikud_name: str) -> Dict[int, str]:
         '\u05B0': 'שווא',   # ְ
         '\u05B9': 'חולם',   # ֹ
         '\u05BB': 'קובוץ',  # ֻ
-        # שורוק = ו + דגש, נטפל בו בנפרד
+        # חטפים - מומרים לניקוד הרגיל
+        '\u05B1': 'חטף_סגול',  # ֱ -> סגול
+        '\u05B2': 'חטף_פתח',   # ֲ -> פתח
+        '\u05B3': 'חטף_קמץ',   # ֳ -> קמץ
     }
 
-    # תו דגש שיש להתעלם ממנו
+    # המרת חטפים לניקודים רגילים
+    CHATAF_TO_NIKUD = {
+        'חטף_סגול': 'סגול',
+        'חטף_פתח': 'פתח',
+        'חטף_קמץ': 'קמץ',
+    }
+
+    # תו דגש
     DAGESH = '\u05BC'
+
+    # אותיות ניקוד
+    VAV = 'ו'
+    YOD = 'י'
 
     nikud_dict = {}
     nikud_idx = 0
@@ -178,17 +192,69 @@ def nikud_dict_from_nikud_name(name: str, nikud_name: str) -> Dict[int, str]:
             nikud_idx += 1
             collected_nikud = []
 
-            # אוסף את כל תווי הניקוד שאחרי האות
+            # בדיקה מיוחדת: האם האות הבאה היא אות ניקוד (ו או י)?
+            next_letter_is_nikud = False
+            next_nikud_type = None
+
+            if name_idx + 1 < len(name):
+                # בודק אם האות הבאה בשם המקורי היא ו או י
+                next_char = name[name_idx + 1]
+
+                # בודק מה יש אחרי האות הנוכחית בשם המנוקד
+                temp_idx = nikud_idx
+
+                # דלג על דגש אם יש
+                while temp_idx < len(nikud_name) and nikud_name[temp_idx] == DAGESH:
+                    temp_idx += 1
+
+                # בדוק אם יש ניקוד רגיל
+                while temp_idx < len(nikud_name) and nikud_name[temp_idx] in NIKUD_MAP:
+                    temp_idx += 1
+
+                # עכשיו בדוק אם האות הבאה היא אות ניקוד
+                if temp_idx < len(nikud_name) and nikud_name[temp_idx] == next_char:
+                    # האות הבאה קיימת - בדוק אם אחריה יש דגש (שורוק) או חולם/חיריק
+                    peek_idx = temp_idx + 1
+
+                    if next_char == VAV and peek_idx < len(nikud_name):
+                        if nikud_name[peek_idx] == DAGESH:
+                            # שורוק מלא - האות הנוכחית תקבל "שורוק" והו תהיה "ריק"
+                            next_letter_is_nikud = True
+                            next_nikud_type = 'שורוק'
+                        elif nikud_name[peek_idx] == '\u05B9':  # חולם
+                            # חולם מלא - האות הנוכחית תקבל "חולם" והו תהיה "ריק"
+                            next_letter_is_nikud = True
+                            next_nikud_type = 'חולם'
+
+                    elif next_char == YOD and peek_idx < len(nikud_name):
+                        if nikud_name[peek_idx] == '\u05B4':  # חיריק
+                            # חיריק מלא - האות הנוכחית תקבל "חיריק" והיוד תהיה "ריק"
+                            next_letter_is_nikud = True
+                            next_nikud_type = 'חיריק'
+
+            # אם האות הבאה משמשת כאות ניקוד - הניקוד שייך לאות הנוכחית
+            if next_letter_is_nikud and next_nikud_type:
+                nikud_dict[name_idx + 1] = next_nikud_type
+                # האות הבאה תהיה ריקה
+                nikud_dict[name_idx + 2] = 'ריק'
+                # דלג על כל הניקודים עד האות הבאה ועל הניקוד שלה
+                while nikud_idx < len(nikud_name) and nikud_name[nikud_idx] != name[name_idx + 1]:
+                    nikud_idx += 1
+                # דלג על האות הבאה והניקוד שלה
+                if nikud_idx < len(nikud_name):
+                    nikud_idx += 1  # דלג על האות
+                    # דלג על הניקוד (דגש או ניקוד רגיל)
+                    if nikud_idx < len(nikud_name) and (nikud_name[nikud_idx] == DAGESH or nikud_name[nikud_idx] in NIKUD_MAP):
+                        nikud_idx += 1
+
+                name_idx += 2  # קפוץ שתי אותיות
+                continue
+
+            # איסוף ניקודים רגילים
             while nikud_idx < len(nikud_name):
                 nikud_char = nikud_name[nikud_idx]
 
-                # טיפול מיוחד בשורוק (ו + דגש)
-                if name[name_idx] == 'ו' and nikud_char == DAGESH:
-                    collected_nikud = ['שורוק']
-                    nikud_idx += 1
-                    break
-
-                # התעלמות מדגש (למעט במקרה של שורוק)
+                # התעלמות מדגש (למעט במקרה של שורוק שכבר טופל)
                 if nikud_char == DAGESH:
                     nikud_idx += 1
                     continue
@@ -196,6 +262,9 @@ def nikud_dict_from_nikud_name(name: str, nikud_name: str) -> Dict[int, str]:
                 # אם זה ניקוד מוכר - נוסיף אותו
                 if nikud_char in NIKUD_MAP:
                     nikud_name_str = NIKUD_MAP[nikud_char]
+                    # המרת חטף לניקוד רגיל
+                    if nikud_name_str in CHATAF_TO_NIKUD:
+                        nikud_name_str = CHATAF_TO_NIKUD[nikud_name_str]
                     collected_nikud.append(nikud_name_str)
                     nikud_idx += 1
                 else:
