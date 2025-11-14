@@ -1,4 +1,7 @@
-from .CalculationEngine import ASPECT_ORBS
+try:
+    from .CalculationEngine import ASPECT_ORBS
+except ImportError:
+    from CalculationEngine import ASPECT_ORBS
 
 from datetime import datetime
 import matplotlib.pyplot as plt
@@ -566,7 +569,7 @@ def draw_and_save_biwheel_chart(natal_chart_data: dict, transit_chart_data: dict
         traceback.print_exc()
 
 
-def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
+def draw_and_save_chart(chart_data: dict = None, user_obj=None, output_path: str = None):
     """
     מצייר גלגל מפת לידה משופר ושומר אותו כתמונה.
 
@@ -574,13 +577,30 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
     :param user_obj: אובייקט ה-User המכיל את הפרטים (שם, תאריך, מיקום)
     :param output_path: הנתיב המלא לשמירת קובץ התמונה
     """
+    if not chart_data:
+        from chart_analysis.CalculationEngine import calculate_chart_positions
+        chart_data = calculate_chart_positions(
+            datetime.now(),
+            32.34,  # Latitude
+            34.85  # Longitude
+        )
+    if not output_path:
+        import os
+
+        MODULE_DIR = os.path.dirname(__file__)
+        PROJECT_DIR = os.path.abspath(os.path.join(MODULE_DIR, os.pardir, os.pardir))
+        CHARTS_DIR = os.path.join(PROJECT_DIR, 'output', 'charts')
+
+        output_path = os.path.join(CHARTS_DIR, f"cuurent_transits_chart.png")
+
     try:
         # ✅ תיקון: שימוש במפתחות הנכונים
         planets_data = chart_data.get('Planets', {})
         house_cusps = chart_data.get('HouseCusps', {})
-        user_name = user_obj.name
-        birthdate = user_obj.birthdate
-        birthtime = user_obj.birthtime if user_obj.birthtime else "לא ידוע"
+        if user_obj:
+            user_name = user_obj.name
+            birthdate = user_obj.birthdate
+            birthtime = user_obj.birthtime if user_obj.birthtime else "לא ידוע"
 
         ascendant_degree = None
 
@@ -870,12 +890,20 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
         # 8. כותרת ופרטי לידה
         # =====================================
 
-        title_text = fix_hebrew_text(f"מפת לידה - {user_name}")
-        # Reverse only the Hebrew labels, keeping the numbers (date/time) in LTR order.
-        subtitle_text = (
-                f" {birthtime} " + fix_hebrew_text("| שעה:") +
-                f" {birthdate} " + fix_hebrew_text("תאריך לידה:")
-        )
+        if user_obj:
+            title_text = fix_hebrew_text(f"מפת לידה - {user_name}")
+
+            # Reverse only the Hebrew labels, keeping the numbers (date/time) in LTR order.
+            subtitle_text = (
+                    f" {birthtime} " + fix_hebrew_text("| שעה:") +
+                    f" {birthdate} " + fix_hebrew_text("תאריך לידה:")
+            )
+        else:
+            title_text = fix_hebrew_text("מפת מעברים נוכחיים")
+            subtitle_text = (
+                    f" {datetime.now():%d/%m/%Y %H:%M} " + fix_hebrew_text("תאריך: ")
+            )
+
         plt.text(0, 1.22, title_text, fontsize=18, ha='center',
                  fontweight='bold', color='#2C3E50')
         plt.text(0, 1.15, subtitle_text, fontsize=13, ha='center',
@@ -894,3 +922,7 @@ def draw_and_save_chart(chart_data: dict, user_obj, output_path: str):
         import traceback
         print(f"❌ אירעה שגיאה בציור המפה: {e}")
         traceback.print_exc()
+
+
+if __name__ == "__main__":
+    draw_and_save_chart()
